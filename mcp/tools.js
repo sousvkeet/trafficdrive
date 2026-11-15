@@ -239,10 +239,11 @@ function registerTools(server, ctx) {
       if (r.proxy) good.push(r.proxy); else invalid.push({ entry: i + 1, problem: r.error });
     });
     if (!good.length) return fail('None of the entries could be parsed.', invalid.slice(0, 5).map((x) => `#${x.entry}: ${x.problem}`).join('; '));
+    const socksLogin = good.filter((p) => /^socks/.test(p.type) && p.username).length;
     const before = (await api.get('/api/proxies')).proxies.length;
     const r = await api.post('/api/proxies/load', { proxies: good });
     return ok({ added: r.count - before, duplicatesIgnored: good.length - (r.count - before), invalid: invalid.slice(0, 20), invalidCount: invalid.length, totalLoaded: r.count },
-      `Added ${r.count - before} proxy(ies); ${r.count} loaded.${invalid.length ? ` ${invalid.length} entr${invalid.length === 1 ? 'y was' : 'ies were'} invalid.` : ''} Run validate_proxies to drop dead ones.`);
+      `Added ${r.count - before} proxy(ies); ${r.count} loaded.${invalid.length ? ` ${invalid.length} entr${invalid.length === 1 ? 'y was' : 'ies were'} invalid.` : ''}${socksLogin ? ` Warning: ${socksLogin} are SOCKS proxies with a login — the campaign browser (Chrome) cannot use those; use the provider's HTTP port instead.` : ''} Run validate_proxies to drop dead ones.`);
   });
 
   tool('list_proxy_sources', {
@@ -319,7 +320,7 @@ function registerTools(server, ctx) {
     if (job.status === 'error') return fail(job.error);
     const top = await api.get('/api/proxies', { query: { status: 'working', sort: 'speed', limit: 10 } });
     const removed = job.options.removeDead && job.status === 'done';
-    return ok({ tested: job.total, checked: job.done, working: job.working, dead: job.dead, notChecked: job.total - job.done, skippedAlreadyVerified: job.skipped, stoppedEarly: job.stoppedEarly, cancelled: job.status === 'cancelled', removedDeadFromLoaded: removed, removed: job.removed, loadedNow: top.stats.total, avgMs: job.avgMs, seconds: Math.round(job.elapsedMs / 1000), testedAgainst: job.testUrl, fastest: top.proxies.map(maskProxy) },
+    return ok({ tested: job.total, checked: job.done, working: job.working, dead: job.dead, notChecked: job.total - job.done, skippedAlreadyVerified: job.skipped, deadReasons: job.reasons, stoppedEarly: job.stoppedEarly, cancelled: job.status === 'cancelled', removedDeadFromLoaded: removed, removed: job.removed, loadedNow: top.stats.total, avgMs: job.avgMs, seconds: Math.round(job.elapsedMs / 1000), testedAgainst: job.testUrl, fastest: top.proxies.map(maskProxy) },
       `${job.working}/${job.done} proxies ${job.testUrl ? `can open ${job.testUrl}` : 'work'} (${Math.round(job.elapsedMs / 1000)} s)${removed ? `; ${job.removed} dead removed` : ''}${job.stoppedEarly ? '; stopped early' : ''}${job.status === 'cancelled' ? '; cancelled' : ''}.`);
   });
 

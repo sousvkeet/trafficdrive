@@ -21,6 +21,21 @@ const https = require('https');
 const net = require('net');
 const tls = require('tls');
 const { SocksClient } = require('socks');
+const ProxyHandler = require('./Proxyhandler.js');
+const handler = new ProxyHandler();
+
+// Why a check failed, in a few words the page can count and show.
+function errReason(e) {
+  const code = String((e && (e.code || e.message)) || '');
+  if (/ECONNREFUSED/.test(code)) return 'refused';
+  if (/ECONNRESET|EPIPE|socket hang up/i.test(code)) return 'reset';
+  if (/ETIMEDOUT|timed? ?out/i.test(code)) return 'timeout';
+  if (/ENOTFOUND|EAI_AGAIN/.test(code)) return 'dns';
+  if (/EHOSTUNREACH|ENETUNREACH/.test(code)) return 'unreachable';
+  if (/CERT|SSL|TLS|SELF_SIGNED|UNABLE_TO_VERIFY|ALTNAME/i.test(code)) return 'tls';
+  if (/auth/i.test(code)) return 'login';
+  return 'error';
+}
 
 const DEFAULT_TARGETS = ['http://www.gstatic.com/generate_204', 'http://cp.cloudflare.com/generate_204'];
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
@@ -80,19 +95,25 @@ function checkProxy(proxy, { target, timeoutMs, signal, expect = 'generic' }) {
       try { if (sock) sock.destroy(); } catch (_) {}
       resolve(r);
     };
-    const dead = () => finish({ ok: false, ms: 0 });
+    const dead = (reason) => finish({ ok: false, ms: 0, reason: reason || 'error' });
     const onAbort = () => finish({ aborted: true });
-    const timer = setTimeout(dead, timeoutMs);
+    const timer = setTimeout(() => dead('timeout'), timeoutMs);
     if (signal) { if (signal.aborted) return finish({ aborted: true }); signal.addEventListener('abort', onAbort, { once: true }); }
 
-    const type = String((proxy && proxy.type) || 'http').toLowerCase();
-    const host = proxy && proxy.host;
-    const port = parseInt(proxy && proxy.port, 10);
-    if (!host || !port) return dead();
+    // judge the proxy exactly as the campaign browser will use it
+    const support = handler.browserSupport(proxy || {});
+    if (!support.ok) return dead(support.reason);
+    const eff = handler.buildSessionProxy(proxy, 'check') || {};
+    const type = String(eff.type || 'http').toLowerCase();
+    const host = eff.host;
+    const port = parseInt(eff.port, 10);
+    if (!host || !port) return dead('error');
     const secure = target.protocol === 'https:';
     const targetHost = target.hostname;                                        // IPv6 keeps its [brackets] here
     const targetPort = parseInt(target.port, 10) || (secure ? 443 : 80);
     const path = target.pathname + target.search;
+    // an answer came back: fine, or why not (407 = the proxy wants a (different) login; anything else = what the site or proxy said)
+    const statusResult = (code) => (isOk(code, expect) ? { ok: true, ms: Date.now() - start, status: code } : { ok: false, ms: 0, status: code, reason: code === 407 ? 'login' : `http-${code}` });
     const requestText = `GET ${path} HTTP/1.1\r\nHost: ${target.host}\r\nUser-Agent: ${BROWSER_UA}\r\nAccept: text/html,application/xhtml+xml,*/*;q=0.8\r\nAccept-Language: en-US,en;q=0.9\r\nConnection: close\r\n\r\n`;
 
     // The tunnel to the site exists (CONNECT or SOCKS): for https add TLS — certificate checked — then ask for the page
@@ -105,11 +126,11 @@ function checkProxy(proxy, { target, timeoutMs, signal, expect = 'generic' }) {
         s.on('data', (chunk) => {
           buf += chunk;
           const m = buf.match(/^HTTP\/1\.[01] (\d{3})/);
-          if (m) finish({ ok: isOk(+m[1], expect), ms: Date.now() - start, status: +m[1] });
-          else if (buf.length > 64) dead();
+          if (m) finish(statusResult(+m[1]));
+          else if (buf.length > 64) dead('bad-answer');
         });
-        s.on('error', dead);
-        s.on('close', dead);
+        s.on('error', (e) => dead(errReason(e)));
+        s.on('close', () => dead('closed'));
         s.write(requestText);
       };
       if (!secure) return go(socket);
@@ -117,36 +138,36 @@ function checkProxy(proxy, { target, timeoutMs, signal, expect = 'generic' }) {
       const t = tls.connect({ socket, host: bare, servername: net.isIP(bare) ? undefined : bare, ALPNProtocols: ['http/1.1'], ca: extraCa() });
       sock = t;
       t.once('secureConnect', () => go(t));
-      t.on('error', dead);
+      t.on('error', (e) => dead(errReason(e)));
     };
 
     try {
       if (type.startsWith('socks')) {
         SocksClient.createConnection({
-          proxy: { host, port, type: type === 'socks4' ? 4 : 5, ...(proxy.username ? { userId: proxy.username } : {}), ...(proxy.password ? { password: proxy.password } : {}) },
+          proxy: { host, port, type: type === 'socks4' ? 4 : 5, ...(eff.username ? { userId: eff.username } : {}), ...(eff.password ? { password: eff.password } : {}) },
           command: 'connect',
           destination: { host: targetHost.replace(/^\[|\]$/g, ''), port: targetPort },
           timeout: timeoutMs,
-        }).then(({ socket }) => { if (settled) { socket.destroy(); return; } sock = socket; speak(socket); }).catch(dead);
+        }).then(({ socket }) => { if (settled) { socket.destroy(); return; } sock = socket; speak(socket); }).catch((e) => dead(errReason(e)));
         return;
       }
 
       const proxyHost = host.replace(/^\[|\]$/g, '');
-      const auth = proxy.username ? { 'Proxy-Authorization': 'Basic ' + Buffer.from(`${proxy.username}:${proxy.password || ''}`).toString('base64') } : {};
+      const auth = eff.username ? { 'Proxy-Authorization': 'Basic ' + Buffer.from(`${eff.username}:${eff.password || ''}`).toString('base64') } : {};
       if (secure) {
         // https through an http(s) proxy: ask for a tunnel (CONNECT). Proxies that do not allow it fail here.
         req = http.request({ hostname: proxyHost, port, method: 'CONNECT', path: `${targetHost}:${targetPort}`, headers: { Host: `${targetHost}:${targetPort}`, 'User-Agent': BROWSER_UA, ...auth } });
-        req.on('connect', (res, socket) => { if (res.statusCode !== 200) { socket.destroy(); return dead(); } speak(socket); });
-        req.on('response', () => dead());     // a plain answer instead of a tunnel
+        req.on('connect', (res, socket) => { if (res.statusCode !== 200) { socket.destroy(); return dead(res.statusCode === 407 ? 'login' : 'no-tunnel'); } speak(socket); });
+        req.on('response', (res) => dead(res.statusCode === 407 ? 'login' : 'no-tunnel'));     // a plain answer instead of a tunnel
       } else {
         // http: ask the proxy to fetch the absolute URL.
         req = http.request({ hostname: proxyHost, port, method: 'GET', path: target.href, headers: { Host: target.host, 'User-Agent': BROWSER_UA, Accept: 'text/html,*/*;q=0.8', Connection: 'close', ...auth } },
-          (res) => finish({ ok: isOk(res.statusCode, expect), ms: Date.now() - start, status: res.statusCode }));   // the status line is all we need
+          (res) => finish(statusResult(res.statusCode)));   // the status line is all we need
       }
-      req.on('error', dead);
+      req.on('error', (e) => dead(errReason(e)));
       req.end();
     } catch (_) {
-      dead();
+      dead('error');
     }
   });
 }
@@ -166,7 +187,7 @@ class ValidationJob {
     this.done = 0; this.working = 0; this.dead = 0; this.sumMs = 0;
     this.results = new Array(proxies.length);
     this.startedAt = Date.now(); this.finishedAt = null;
-    this.target = null; this.error = null; this.stoppedEarly = false; this.removed = 0;
+    this.target = null; this.error = null; this.stoppedEarly = false; this.removed = 0; this.reasons = {};
     this._ac = new AbortController();
     this.finished = this._run();
   }
@@ -214,7 +235,7 @@ class ValidationJob {
           if (this.opts.onResult) { try { this.opts.onResult(p, r, site || 'generic'); } catch (_) {} }
           this.results[i] = { ok: !!r.ok, ms: r.ok ? r.ms : 0 };
           this.done++;
-          if (r.ok) { this.working++; this.sumMs += r.ms; } else this.dead++;
+          if (r.ok) { this.working++; this.sumMs += r.ms; } else { this.dead++; const why = r.reason || 'error'; this.reasons[why] = (this.reasons[why] || 0) + 1; }
           if (this.opts.stopAfterWorking && this.working >= this.opts.stopAfterWorking) { this.stoppedEarly = true; this._ac.abort(); }
         }
       };
@@ -239,7 +260,7 @@ class ValidationJob {
       id: this.id, status: this.status, total: this.total, done: this.done, working: this.working, dead: this.dead,
       avgMs: this.working ? Math.round(this.sumMs / this.working) : null,
       startedAt: this.startedAt, finishedAt: this.finishedAt, elapsedMs: end - this.startedAt,
-      target: this.target, testUrl: this.opts.testUrl || null, error: this.error, stoppedEarly: this.stoppedEarly, removed: this.removed, skipped: this.opts.skipped || 0,
+      target: this.target, testUrl: this.opts.testUrl || null, error: this.error, stoppedEarly: this.stoppedEarly, removed: this.removed, skipped: this.opts.skipped || 0, reasons: { ...this.reasons },
       options: { concurrency: this.opts.concurrency, timeoutMs: this.opts.timeoutMs, stopAfterWorking: this.opts.stopAfterWorking || null, removeDead: !!this.opts.removeDead, onlyUnchecked: !!this.opts.onlyUnchecked },
     };
   }

@@ -1570,7 +1570,7 @@ async function verifyCampaignProxies(mode, body) {
   };
 
   let { good, unknown, cached } = split(site);
-  let checked = 0;
+  let checked = 0, reasons = {};
   if (good.length < needed && unknown.length) {
     let job = await run(url, unknown, needed - good.length);
     if (job.status === 'error' && url) {
@@ -1584,17 +1584,26 @@ async function verifyCampaignProxies(mode, body) {
     if (job) {
       if (job.status === 'error') throw httpError(503, job.error);
       checked = job.done;
+      reasons = job.reasons;
       unknown.forEach((p, i) => { if (job.results[i] && job.results[i].ok) good.push(p); });
     }
   }
-  const info = { url, tested: records.length, checked, verified: good.length, cached, seconds: +((Date.now() - started) / 1000).toFixed(1), ...(fallback ? { fallback } : {}) };
+  const info = { url, tested: records.length, checked, verified: good.length, cached, seconds: +((Date.now() - started) / 1000).toFixed(1), reasons, ...(fallback ? { fallback } : {}) };
   if (!good.length) {
-    const err = httpError(422, `None of the ${records.length} proxies could open ${url || 'the test address'}${checked && checked < records.length ? ` (${checked} checked in ${info.seconds} s)` : ''}. Load proxies that work for this site, or run the campaign without proxies.`);
+    const why = reasonSummary(reasons);
+    const err = httpError(422, `None of the ${records.length} proxies could open ${url || 'the test address'}${checked && checked < records.length ? ` (${checked} checked in ${info.seconds} s)` : ''}${why ? ` — ${why}` : ''}. Load proxies that work for this site, or run the campaign without proxies.`);
     err.proxyCheck = info;
     throw err;
   }
   const clean = good.map(({ type, host, port, username, password, raw }) => ({ type, host, port, username, password, raw }));
   return { body: { ...body, proxies: clean, useLoadedProxies: false }, info };
+}
+
+// Why proxies failed, in words (for logs and error messages; the page has its own translated labels).
+const REASON_TEXT = { timeout: 'timed out', refused: 'refused the connection', reset: 'dropped the connection', closed: 'closed the connection', dns: 'unknown host', unreachable: 'unreachable', tls: 'broke HTTPS (bad certificate)', login: 'wrong or missing login', 'no-tunnel': 'cannot tunnel HTTPS', 'socks-login': 'SOCKS with a login (Chrome cannot use these)', 'bad-answer': 'gave a garbled answer', error: 'other errors' };
+function reasonSummary(reasons, top = 3) {
+  return Object.entries(reasons || {}).sort((a, b) => b[1] - a[1]).slice(0, top)
+    .map(([k, n]) => `${n} ${REASON_TEXT[k] || (/^http-\d+$/.test(k) ? `answered HTTP ${k.slice(5)}` : k)}`).join(', ');
 }
 
 // Start a campaign, first making sure the proxies it will use can open its address.
@@ -2165,7 +2174,9 @@ async function handleRequest(req, res) {
       invalidLines = t.invalidLines;        // which lines failed and why — the page shows them and keeps them in the box
     }
     const r = addToProxyList(records);
-    sendJSON(res, 200, { success: true, count: loadedProxies.length, added: r.added, duplicates: r.duplicates, invalid: r.invalid + badLines, invalidLines, stats: proxyStats() });
+    // Chrome cannot use SOCKS proxies that need a password: say so now rather than let them fail later
+    const socksLogin = records.filter((p) => /^socks/i.test(String(p.type)) && p.username).length;
+    sendJSON(res, 200, { success: true, count: loadedProxies.length, added: r.added, duplicates: r.duplicates, invalid: r.invalid + badLines, invalidLines, socksLogin, stats: proxyStats() });
     return;
   }
 

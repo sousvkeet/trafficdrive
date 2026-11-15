@@ -52,6 +52,7 @@ The app only **detects** a CAPTCHA and **pauses** that session so a person can s
 
 ## Proxies
 
+- `validate_proxies` returns `deadReasons` (timeout, refused, `no-tunnel` = cannot tunnel HTTPS, `tls` = tampers with HTTPS, `login` = wrong or missing login, `socks-login` = SOCKS with a password, which Chrome cannot use, `http-403` = the site or proxy said 403 …). Quote the top ones to the user.
 - Free scraped proxies (`scrape_free_proxies`) are slow, short-lived and untrusted. A high failure rate with them is expected. Suggest the user's own proxies.
 - `validate_proxies` with no `proxies` argument checks the loaded list and removes the dead ones unless `removeDead` is `false`. With a `proxies` list it tests only those and removes nothing.
 - "Cannot reach the test server" means the computer itself cannot reach the internet (or a firewall blocks the test server). Nothing was marked dead or removed. Fix the connection and run it again.

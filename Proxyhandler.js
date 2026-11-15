@@ -1,37 +1,44 @@
 // Proxyhandler.js
-// Builds Playwright-compatible proxy configuration from proxy records.
+// Turns a proxy record into what Playwright's browser.newContext() expects, and says whether the browser can use it.
 //
 // A proxy record looks like:
 //   { type, host, port, username, password, raw }
 //
-// buildSessionProxy() injects a unique -session-<id> suffix into the username
-// for rotating/residential proxies (ProxyOmega, Bright Data, etc.) so each
-// thread gets its own exit IP. Plain IP:port proxies (no username) are
-// returned unchanged.
-//
-// buildPlaywrightProxyOpts() turns a session proxy into the { proxy: {...} }
-// object Playwright's newContext() expects.
+// Rules — each one fixes a way a proxy used to pass the checker and then fail inside a campaign:
+//  - The login is used exactly as given. (It used to get "-session-t1", "-session-t2"… appended for every proxy with a
+//    user name, so ordinary user:pass proxies were refused by their own server.) A per-session value is only put in
+//    where it is asked for: a "{session}" placeholder in the user name, or Bright Data's documented
+//    "brd-customer-…-zone-…" form, which takes "-session-<id>".
+//  - A proxy listed as "https" is an ordinary proxy that can tunnel HTTPS (that is what proxy lists mean by it), so
+//    Chrome is given http://host:port. Telling Chrome https://host:port makes it speak TLS to a plain proxy and fail.
+//  - Chrome cannot use SOCKS proxies that need a user name and password; browserSupport() says so, so the checker
+//    can reject them instead of reporting them as working.
+
+const BRIGHT_DATA = /^brd-customer-[^:]*-zone-/i;
 
 class ProxyHandler {
   buildSessionProxy(proxy, sessionId) {
     if (!proxy) return null;
     const sessionProxy = { ...proxy };
-    if (sessionProxy.username && typeof sessionId === 'string' && sessionId) {
-      // Only inject the session suffix for proxies that look like rotating
-      // residential/datacenter pools (they typically use a username with a
-      // bracketed session token already, e.g. user-session-XYZ).
-      const base = sessionProxy.username;
-      // Avoid double-injecting if a -session- token is already present.
-      if (!/-session-/i.test(base)) {
-        sessionProxy.username = `${base}-session-${sessionId}`;
-      }
+    const user = sessionProxy.username;
+    if (user && typeof sessionId === 'string' && sessionId) {
+      if (user.includes('{session}')) sessionProxy.username = user.split('{session}').join(sessionId);
+      else if (BRIGHT_DATA.test(user) && !/-session-/i.test(user)) sessionProxy.username = `${user}-session-${sessionId}`;
     }
     return sessionProxy;
   }
 
+  // { ok: true } or { ok: false, reason } — what the campaign browser (Chromium) can do with this proxy.
+  browserSupport(proxy) {
+    const type = String((proxy && proxy.type) || 'http').toLowerCase();
+    if ((type === 'socks5' || type === 'socks4') && proxy.username) return { ok: false, reason: 'socks-login' };
+    return { ok: true };
+  }
+
   buildPlaywrightProxyOpts(proxy) {
     if (!proxy || !proxy.host || !proxy.port) return {};
-    const scheme = (proxy.type || 'http').toLowerCase();
+    let scheme = (proxy.type || 'http').toLowerCase();
+    if (scheme === 'https') scheme = 'http';          // see the top of the file
     const server = `${scheme}://${proxy.host}:${proxy.port}`;
     const opts = {
       proxy: { server },
