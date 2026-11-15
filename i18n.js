@@ -1,0 +1,657 @@
+// i18n.js — Internationalization helper for TrafficDrive dashboard.
+//
+// Provides:
+//   - t(key)            : translate a key to the active language (falls back
+//                         to the original English text found in the DOM, then
+//                         to the key itself).
+//   - initLanguage()    : build the English fallback map from [data-i18n]
+//                         elements and apply the saved/selected language.
+//   - changeLanguage()  : switch the active language and re-render the UI.
+//   - applyTranslations(): re-apply all data-i18n / data-i18n-ph attributes.
+//
+// Translations for non-English languages are stored in the LANGS object below.
+// Only keys that differ from English need to be provided; missing keys fall
+// back to the English text harvested from the DOM.
+
+(function () {
+  'use strict';
+
+  // English fallback map: key -> text. Populated from the DOM on init.
+  const EN = {};
+
+  // Active language code ('en' by default).
+  let currentLang = 'en';
+
+  // -----------------------------------------------------------------------
+  // Translation dictionaries. Add more languages here as needed.
+  // Keys not present fall back to the English text harvested from the DOM.
+  // -----------------------------------------------------------------------
+  const LANGS = {
+    // English text for keys that only appear in JavaScript (log messages,
+    // status labels, confirm dialogs). Without these, English mode showed
+    // the raw keys, e.g. "campaign_started_log".
+    en: {
+      added_to_list: "added to list",
+      all_browsers_closed: "All browsers closed",
+      all_logs_cleared: "All logs cleared",
+      api_connection_failed: "API connection failed",
+      auto_loop_disabled_log: "Auto-loop disabled",
+      auto_loop_enabled_log: "Auto-loop enabled — the campaign restarts when it finishes",
+      auto_loop_on: "ON — campaign restarts when finished",
+      auto_loop_on_log: "Auto-loop is on",
+      auto_rotate_disabled_log: "Auto-rotate disabled",
+      auto_rotate_enabled_log: "Auto-rotate enabled",
+      auto_rotate_preview: "Auto-rotate preview",
+      br_add_failed: "Failed to add browser",
+      br_chromium: "Chromium",
+      br_confirm_remove: "Remove this browser?",
+      br_custom_added: "Custom browser added",
+      br_custom_removed: "Custom browser removed",
+      br_enter_path: "File picker unavailable — type or paste the browser executable path",
+      br_fill_name_path: "Enter a browser name and path",
+      br_firefox: "Firefox",
+      br_launch_failed: "Browser launch failed",
+      br_launched: "Browser launched",
+      browser_installed: "Browser installed",
+      browser_mode_log: "Browser mode",
+      browser_visible_log: "Browser windows will be visible",
+      browsers: "browsers",
+      campaign_already_running: "A campaign is already running",
+      campaign_deleted: "Campaign deleted",
+      campaign_not_found: "Campaign not found",
+      campaign_paused_local: "Campaign paused locally (backend unreachable)",
+      campaign_paused_log: "Campaign paused",
+      campaign_resumed_local: "Campaign resumed locally (backend unreachable)",
+      campaign_resumed_log: "Campaign resumed",
+      campaign_started_log: "Campaign started",
+      campaign_stopped_log: "Campaign stopped",
+      checking: "Checking",
+      confirm_delete_campaign: "Delete this campaign?",
+      confirm_remove_engine: "Remove",
+      confirm_reset: "Are you sure you want to reset everything?",
+      custom_engine_added: "Custom engine added",
+      dashboard_refreshed: "Dashboard refreshed",
+      delay: "Delay",
+      delete_btn: "Delete",
+      desktop_mode_log: "Desktop mode",
+      direct_mode_selected: "Direct mode selected",
+      direct_started: "Direct traffic started",
+      downloaded: "downloaded",
+      engine_removed: "Engine removed",
+      engines_saved_log: "Engines saved",
+      enter_biz_name_gmaps: "Enter a business name for Google Maps",
+      enter_engine_name_url: "Enter an engine name and URL",
+      enter_keywords_organic: "Enter keywords for organic search",
+      enter_website_url: "Enter a website URL",
+      extracting: "Extracting...",
+      failed: "Failed",
+      failed_start_direct: "Failed to start direct traffic",
+      failed_start_gmaps: "Failed to start Google Maps traffic",
+      failed_start_organic: "Failed to start organic search",
+      failed_start_referral: "Failed to start referral traffic",
+      fill_campaign_name_url: "Enter a campaign name and URL",
+      get_from_web: "Get from web",
+      gmaps_mode_selected: "Google Maps mode selected",
+      gmaps_started: "Google Maps traffic started",
+      idle: "Idle",
+      il_each_link: "Each link",
+      il_link: "Link",
+      il_link_desc: "will be opened and read",
+      il_links_after_scroll: "links after scrolling",
+      il_links_log: "Internal links",
+      il_links_will_open: "links will open",
+      il_nav_disabled: "Internal link navigation disabled",
+      il_nav_enabled: "Internal link navigation enabled",
+      il_preview: "Preview",
+      il_total_time: "Total time",
+      install: "Install",
+      install_failed: "Install failed",
+      install_request_failed: "Install request failed",
+      installed: "Installed",
+      installing_browser: "Installing browser",
+      invalid_resolution: "Invalid resolution",
+      left: "left",
+      loaded: "Loaded",
+      loading_campaign: "Loading campaign",
+      logs_cleared: "Logs cleared",
+      logs_exported: "Logs exported",
+      maps_timing_log: "Maps timing",
+      mobile_mode_log: "Mobile mode",
+      mobile_threads_resolution_log: "Each mobile thread gets its own resolution",
+      mode_label: "Mode",
+      no_proxies_backend: "No proxies loaded on the backend — using a direct connection",
+      no_proxies_load: "No proxies to load",
+      no_proxies_validate: "No proxies to validate",
+      off_status: "OFF",
+      on_status: "ON",
+      organic_mode_selected: "Organic search mode selected",
+      organic_started: "Organic search started",
+      pause_failed: "Pause failed",
+      paused_status: "Paused",
+      privacy_log: "Privacy features",
+      proxies_available_log: "Proxies available",
+      proxies_bg_log: "Proxies in use",
+      proxies_cleared: "Proxies cleared",
+      proxies_loaded_saved: "proxies loaded and saved",
+      proxies_local_backend_fail: "Proxies saved locally, but the backend rejected them",
+      proxies_local_backend_unreachable: "Proxies saved locally, but the backend is unreachable",
+      proxy_validation_api_failed: "Proxy validation request failed",
+      proxy_validation_failed: "Proxy validation failed",
+      ref_platform_log: "Referral platform",
+      referral_started: "Referral traffic started",
+      remaining: "remaining",
+      resolution_category: "Resolution category",
+      resolution_reset_default: "Resolution reset to default",
+      resolution_set: "Resolution set",
+      resume_failed: "Resume failed",
+      running_status: "Running",
+      scrape_failed: "Proxy scrape failed",
+      scrape_no_proxies: "No proxies found",
+      scraped_proxies: "Proxies scraped",
+      scraping_proxies: "Scraping proxies...",
+      scroll_error: "Scroll error",
+      scroll_preview: "Scroll preview",
+      scroll_start_failed: "Scroll system failed to start",
+      scroll_system_activated: "Scroll system activated",
+      scroll_system_not_found: "Scroll system not found",
+      settings_saved: "Settings saved",
+      settings_updated: "Settings updated",
+      starting_direct: "Starting direct traffic...",
+      starting_download: "Starting download...",
+      starting_gmaps: "Starting Google Maps traffic...",
+      starting_organic: "Starting organic search...",
+      starting_referral: "Starting referral traffic...",
+      stopped_status: "Stopped",
+      successful: "Successful",
+      system_on: "System ON",
+      testing_auto_rotate: "Testing auto-rotate",
+      thread_count_updated: "Thread count updated",
+      thread_label: "Thread",
+      threads_label: "threads",
+      ua_selected_log: "User agents selected",
+      validating_all_proxies: "Validating all proxies...",
+      validating_proxies: "Validating proxies...",
+      validation_complete: "Validation complete",
+      validation_done: "Validation done",
+      visit_time_log: "Visit time",
+      visit_time_saved: "Visit time saved",
+      website: "Website",
+      mcp_backend_offline: "The app's backend is not reachable",
+      mcp_on: "On",
+      mcp_off: "Off",
+      mcp_published: "Published",
+      mcp_not_published: "Not published",
+      mcp_disabled_env: "Disabled by the TD_NO_CONNECTION_FILE environment variable — assistants cannot attach to this app.",
+      mcp_file_would_be: "Not written. It would be:",
+      mcp_note_code: "Run this once in a terminal. Claude Code then starts TrafficDrive's assistant tools automatically.",
+      mcp_note_desktop: "Open Claude Desktop → Settings → Developer → Edit Config, merge this into claude_desktop_config.json, then restart Claude Desktop.",
+      mcp_note_json: "For any other MCP client: add this server definition to its MCP configuration (the command, arguments and environment are what matter).",
+      mcp_needs_node: "Needs Node.js on the computer that runs the assistant.",
+      mcp_no_node: "Uses this app's built-in runtime — no Node.js needed. Keep the app installed where it is now.",
+      mcp_copied: "Copied!",
+      mcp_copy: "Copy",
+      mcp_copied_log: "Copied the AI assistant setup",
+      mcp_access_on_log: "AI assistants may now attach to this app",
+      mcp_access_off_log: "AI assistants can no longer attach to this app",
+      mcp_toggle_failed: "Could not change AI access",
+      mcp_testing: "Testing…",
+      mcp_tools: "tools",
+      mcp_resources: "resources",
+      mcp_prompts: "prompts",
+      mcp_test_ok: "The assistant connection works",
+      mcp_test_attached: "It attached to this running app, so campaigns it starts appear on this page.",
+      mcp_test_works: "The assistant server starts, but it would NOT control this app",
+      mcp_test_standalone: "AI access is off (or unavailable), so it would run its own separate backend. Turn the switch on to control this app.",
+      mcp_test_failed: "The assistant server could not be started",
+      mcp_src_ai: "AI assistant",
+      mcp_src_schedule: "Schedule",
+      mcp_src_dashboard: "Dashboard",
+      mcp_src_api: "API",
+      mcp_no_campaigns: "No campaigns yet — start one from the Dashboard or ask an assistant.",
+      mcp_stop: "Stop",
+      mcp_stopped_log: "Stopped campaign",
+      camp_sync_failed: "Saved on this screen only — the backend could not store the campaign",
+      custom_engine_missing: "Engine is set to Custom but no custom search engine is set up (Settings → Search engines) — using Google",
+      mcp_detecting: "Detecting…",
+      mcp_chip_not_found: "not found",
+      mcp_chip_added: "already set up",
+      mcp_chip_stale: "set up for another location",
+      mcp_detected_here: "Found on this computer",
+      mcp_detect_found: "Found on this computer:",
+      mcp_detect_showing: "Showing the setup for",
+      mcp_detect_manual_pick: "Automatic selection is off — pick a tab yourself.",
+      mcp_detect_failed: "Could not check this computer",
+      mcp_added_current_note: "Already set up in this assistant and pointing at this copy of the app — just press Test connection. The command below is only needed if you want to add it again.",
+      mcp_added_stale_note: "Already set up, but for a different location of the app (it was moved or reinstalled). Copy this setup again to update it.",
+      mcp_config_file: "Config file:",
+      mcp_blk_terminal: "Run once in a terminal",
+      mcp_blk_desktop: "Add to claude_desktop_config.json",
+      mcp_blk_json: "MCP server definition",
+      mcp_docs_link: "Official instructions",
+      mcp_skill_title: "Teach your assistant to use TrafficDrive (optional skill)",
+      mcp_skill_desc: "A skill is a small instruction pack that tells an AI assistant how to run TrafficDrive well: the order of steps, common mistakes to avoid and what to ask you before it starts. The connection above works without it; the skill just makes the assistant more careful and effective.",
+      mcp_skill_for: "Instructions for",
+      mcp_skill_download: "Download skill (.zip)",
+      mcp_skill_downloading: "Preparing…",
+      mcp_skill_downloaded: "Downloaded!",
+      mcp_skill_downloaded_log: "Downloaded the TrafficDrive skill (.zip)",
+      mcp_skill_failed: "Could not download the skill",
+      mcp_skill_pick: "Pick your assistant above (or press Auto-detect) to see where its skills go.",
+      mcp_skill_state_current: "Skill installed and up to date",
+      mcp_skill_state_stale: "Skill installed, but an older version",
+      mcp_skill_state_none: "Not found in your personal skills folder yet",
+      mcp_skill_files: "files",
+      mcp_skill_copied_log: "Copied the skill text",
+      mcp_checked: "assistants checked",
+      mcp_detect_found_n: "assistants found on this computer",
+      mcp_detect_none: "No assistant found on this computer — showing the Claude Code setup. Pick yours from the list.",
+    },
+    ur: {
+      nav_dashboard: 'ڈیش بورڈ',
+      nav_campaigns: 'کیمپینز',
+      nav_proxies: 'پراکسیز',
+      nav_settings: 'سیٹنگز',
+      nav_scroll_system: 'اسکرول سسٹم',
+      nav_internal_links: 'اندرونی لنکس',
+      nav_resolutions: 'اسکرین ریزولوشن',
+      nav_useragents: 'یوزر ایجنٹس',
+      nav_privacy: 'پرائیویسی',
+      nav_browsers: 'براؤزرز',
+      nav_rpa: 'آر پی اے آٹومیشن',
+      nav_schedule: 'شیڈول',
+      nav_logs: 'لاگز',
+      nav_help: 'مدد',
+      sys_status: 'سسٹم اسٹیٹس',
+      status: 'اسٹیٹس',
+      active_sessions: 'ایکٹو سیشنز',
+      total_visits: 'کل وزٹس',
+      uptime: 'اپ ٹائم',
+      dark_mode: 'ڈارک موڈ',
+      connected: 'کنیکٹڈ',
+      refresh: 'ریفریش',
+      traffic_settings: 'ٹریفک سیٹنگز',
+      website_url: 'ویب سائٹ یو آر ایل',
+      keywords: 'کی ورڈز (ایک فی لائن)',
+      num_sessions: 'سیشنز کی تعداد',
+      pages_session: 'فی سیشن پیجز',
+      delay_time: 'دیر (سیکنڈ)',
+      to: 'سے',
+      max_visits: 'زیادہ سے زیادہ وزٹس',
+      concurrent_threads: 'ایک ساتھ چلنے والے تھریڈز',
+      headless_mode: 'براؤزر موڈ',
+      opt_vis_debug: 'ویزیبل',
+      opt_headless: 'ہیڈ لیس',
+      traffic_mode: 'ٹریفک موڈ',
+      organic_search: 'آرگینک سرچ',
+      direct_traffic: 'ڈائریکٹ ٹریفک',
+      referral_traffic: 'ریفرل ٹریفک',
+      gmaps_traffic: 'گوگل میپس ٹریفک',
+      device_settings: 'ڈیوائس سیٹنگز',
+      desktop: 'ڈیسک ٹاپ',
+      mobile: 'موبائل',
+      user_agent: 'یوزر ایجنٹ',
+      opt_random: 'رینڈم (تجویز کردہ)',
+      opt_auto: 'آٹو (سسٹم ڈیفالٹ)',
+      opt_custom: 'کسٹم...',
+      visit_time_control: 'وزٹ ٹائم کنٹرول',
+      auto_loop: 'آٹو لوپ',
+      auto_loop_off: 'بند — کیمپین مکمل ہونے پر رک جائے گی',
+      ref_traffic_platform: 'ریفرنس ٹریفک پلیٹ فارم',
+      gmaps_settings: 'گوگل میپس سیٹنگز',
+      biz_name: 'کاروبار / ریستوران کا نام',
+      biz_url: 'کاروبار ویب سائٹ یو آر ایل',
+      search_engines: 'سرچ انجنز',
+      primary_engine: 'پرائمری سرچ انجن',
+      available_engines: 'دستیاب سرچ انجنز',
+      add_custom_engine: 'کسٹم سرچ انجن شامل کریں',
+      add: 'شامل کریں',
+      remove: 'ہٹائیں',
+      create_campaign: 'نئی کیمپین بنائیں',
+      cancel: 'منسوخ',
+      campaign_name: 'کیمپین کا نام',
+      target_url: 'ٹارگٹ یو آر ایل',
+      traffic_mode_label: 'ٹریفک موڈ',
+      sessions_target: 'سیشنز ٹارگٹ',
+      keywords_label: 'کی ورڈز',
+      save: 'محفوظ کریں',
+      sessions: 'سیشنز',
+      visits: 'وزٹس',
+      active: 'ایکٹو',
+      run: 'چلائیں',
+      delete: 'حذف',
+      stopped: 'بند',
+      paste_proxy_list: 'پراکسی لسٹ پیسٹ کریں',
+      app_language: 'ایپلیکیشن زبان',
+      timezone: 'ٹائم زون',
+      browser_engine: 'براؤزر انجن',
+      opt_chromium: 'کرومیئم (بنڈلڈ)',
+      opt_edge: 'مائیکروسافٹ ایج',
+      opt_chrome: 'گوگل کروم',
+      opt_custom_path: 'کسٹم پاتھ',
+      custom_browser_path: 'کسٹم براؤزر پاتھ',
+      headless_mode_label: 'ہیڈ لیس موڈ',
+      browser_settings: 'براؤزر سیٹنگز',
+      browser_behavior: 'براؤزر رویہ',
+      browser: 'براؤزر',
+      ua_search: 'یوزر ایجنٹس سرچ',
+      ua_select_all: 'سب منتخب کریں',
+      ua_deselect_all: 'سب deselect کریں',
+      ua_apply_selected: 'منتخب شدہ لگائیں',
+      ua_count_label: 'منتخب',
+      ua_auto_rotate_title: 'آٹو روٹیٹ یوزر ایجنٹس',
+      ua_enable_auto_rotate: 'آٹو روٹیٹ فعال کریں',
+      ua_rotate_mode: 'روٹیٹ موڈ',
+      ua_randomly_choose: 'رینڈملی منتخب',
+      ua_sequential_one: 'ترتیب وار (ایک ایک)',
+      ua_rotate_per_thread: 'فی تھریڈ کاؤنٹ روٹیٹ',
+      ua_auto_rotate_hint: 'جب آٹو روٹیٹ آن ہو، ہر تھریڈ آپ کی منتخب لسٹ سے رینڈم یوزر ایجنٹ استعمال کرے گا۔',
+      ua_test_auto_rotate: 'آٹو روٹیٹ ٹیسٹ (پریویو)',
+      ua_load_more: 'مزید لوڈ کریں',
+      priv_active_protections: 'ایکٹو پروٹیکشنز',
+      priv_inactive: 'غیر فعال',
+      priv_total_features: 'کل فیچرز',
+      priv_shield_level: 'شیلڈ لیول',
+      priv_enable_all: 'سب فعال کریں',
+      priv_disable_all: 'سب غیر فعال کریں',
+      priv_stealth: 'اسٹیلتھ',
+      priv_balanced: 'بیلنسڈ',
+      priv_enabled_count: 'فعال',
+      br_total_browsers: 'کل براؤزرز',
+      br_chromium_based: 'کرومیئم بیسڈ',
+      br_firefox_based: 'فائر فاکس بیسڈ',
+      br_other_engines: 'دیگر انجنز',
+      browsers: 'براؤزرز',
+      install: 'انسٹال',
+      get_from_web: 'ویب سے حاصل کریں',
+      website: 'ویب سائٹ',
+      br_add_custom: 'کسٹم ایڈ کریں',
+      br_add_custom_browser: 'کسٹم براؤزر ایڈ کریں',
+      br_custom_name: 'براؤزر کا نام',
+      br_custom_name_ph: 'مائی براؤزر',
+      br_custom_path: 'براؤزر پاتھ (.exe)',
+      br_custom_path_ph: 'C:\\Program Files\\Browser\\browser.exe',
+      br_add: 'ایڈ کریں',
+      br_browse: 'براؤز کریں',
+      br_fill_name_path: 'براؤزر کا نام اور پاتھ درج کریں',
+      br_custom_added: 'کسٹم براؤزر ایڈ ہو گیا',
+      br_add_failed: 'براؤزر ایڈ ناکام',
+      br_confirm_remove: 'کیا آپ یہ براؤزر ہٹانا چاہتے ہیں؟',
+      br_custom_removed: 'کسٹم براؤزر ہٹا دیا گیا',
+      br_launched: 'براؤزر لانچ ہو گیا',
+      br_launch_failed: 'براؤزر لانچ ناکام',
+      br_enter_path: 'براؤزر کا پاتھ درج کریں',
+      browser_installed: 'براؤزر انسٹال ہو گیا',
+      installing_browser: 'براؤزر انسٹال ہو رہا ہے',
+      install_failed: 'انسٹال ناکام',
+      install_request_failed: 'انسٹال درخواست ناکام',
+      starting_download: 'ڈاؤن لوڈ شروع ہو رہا ہے',
+      downloaded: 'ڈاؤن لوڈ ہو گیا',
+      remaining: 'باقی',
+      left: 'باقی',
+      extracting: 'نکال رہا ہے',
+      installed: 'انسٹال ہو گیا',
+      failed: 'ناکام',
+      settings_saved: 'سیٹنگز محفوظ ہوگئیں',
+      settings_updated: 'سیٹنگز اپ ڈیٹ ہوگئیں',
+      reset_all: 'سب سیٹنگز ری سیٹ',
+      reset_desc: 'یہ سب کچھ فیکٹری ڈیفالٹ پر ری سیٹ کر دے گا۔',
+      confirm_reset: 'کیا آپ واقعی سب ری سیٹ کرنا چاہتے ہیں؟',
+      on_status: 'آن',
+      off_status: 'بند',
+      running_status: 'چل رہی ہے',
+      paused_status: 'روکی ہوئی',
+      stopped_status: 'بند',
+      idle: 'بیکار',
+      thread_count_updated: 'تھریڈ کاؤنٹ اپ ڈیٹ',
+      il_nav_enabled: 'اندرونی لنکس نیویگیشن فعال',
+      il_nav_disabled: 'اندرونی لنکس نیویگیشن غیر فعال',
+      il_current_status: 'موجودہ اسٹیٹس:',
+      il_links_after_scroll: 'اسکرول کے بعد لنکس',
+      delay: 'دیر',
+      read_time: 'ریڈ ٹائم',
+      il_preview: 'پریویو',
+      il_links_will_open: 'لنکس کھلیں گے',
+      il_each_link: 'ہر لنک',
+      il_link: 'لنک',
+      il_link_desc: 'کھلا اور پڑھا جائے گا',
+      il_total_time: 'کل ٹائم',
+      visit_time_saved: 'وزٹ ٹائم محفوظ',
+      vt_main_page: 'مین پیج',
+      vt_internal_link: 'اندرونی لنک',
+      maps_timing_log: 'میپس ٹائمنگ',
+      direct_mode_selected: 'ڈائریکٹ موڈ منتخب',
+      gmaps_mode_selected: 'گوگل میپس موڈ منتخب',
+      organic_mode_selected: 'آرگینک سرچ موڈ منتخب',
+      mobile_mode_log: 'موبائل موڈ',
+      desktop_mode_log: 'ڈیسک ٹاپ موڈ',
+      threads_label: 'تھریڈز',
+      browser_mode_log: 'براؤزر موڈ',
+      enter_engine_name_url: 'انجن کا نام اور یو آر ایل درج کریں',
+      custom_engine_added: 'کسٹم انجن شامل',
+      confirm_remove_engine: 'کیا ہٹائیں',
+      engine_removed: 'انجن ہٹایا',
+      engines_saved_log: 'انجنز محفوظ',
+      no_proxies_validate: 'ویلیڈیٹ کرنے کے لیے پراکسیز نہیں',
+      validating_proxies: 'پراکسیز ویلیڈیٹ ہو رہی ہیں',
+      validation_done: 'ویلیڈیشن مکمل',
+      auto_loop_on: 'آن — کیمپین دوبارہ شروع',
+      auto_loop_enabled_log: 'آٹو لوپ فعال',
+      auto_loop_off: 'بند — کیمپین مکمل ہونے پر رک جائے گی',
+      auto_loop_disabled_log: 'آٹو لوپ غیر فعال',
+      enter_website_url: 'ویب سائٹ یو آر ایل درج کریں',
+      enter_keywords_organic: 'آرگینک سرچ کے لیے کی ورڈز درج کریں',
+      enter_biz_name_gmaps: 'گوگل میپس کے لیے کاروبار کا نام درج کریں',
+      campaign_started_log: 'کیمپین شروع',
+      mode_label: 'موڈ',
+      default_sessions: 'ڈیفالٹ سیشنز',
+      auto_loop_on_log: 'آٹو لوپ آن',
+      ref_platform_log: 'ریفر پلیٹ فارم',
+      proxies_available_log: 'پراکسیز دستیاب',
+      no_proxies_backend: 'بیک اینڈ پر کوئی پراکسیز نہیں',
+      ua_selected_log: 'یوزر ایجنٹس منتخب',
+      privacy_log: 'پرائیویسی',
+      visit_time_log: 'وزٹ ٹائم',
+      starting_organic: 'آرگینک سرچ شروع ہو رہی ہے',
+      il_links_log: 'اندرونی لنکس',
+      organic_started: 'آرگینک سرچ شروع ہوگئی',
+      failed_start_organic: 'آرگینک سرچ شروع ناکام',
+      api_connection_failed: 'API کنیکشن ناکام',
+      starting_direct: 'ڈائریکٹ ٹریفک شروع ہو رہی ہے',
+      direct_started: 'ڈائریکٹ ٹریفک شروع ہوگئی',
+      failed_start_direct: 'ڈائریکٹ ٹریفک شروع ناکام',
+      starting_referral: 'ریفرل ٹریفک شروع ہو رہی ہے',
+      referral_started: 'ریفرل ٹریفک شروع ہوگئی',
+      failed_start_referral: 'ریفرل ٹریفک شروع ناکام',
+      starting_gmaps: 'گوگل میپس ٹریفک شروع ہو رہی ہے',
+      browser_visible_log: 'براؤزر ویزیبل',
+      proxies_bg_log: 'پراکسیز بیک گراؤنڈ',
+      all_browsers_closed: 'تمام براؤزرز بند',
+      campaign_stopped_log: 'کیمپین روکی گئی',
+      campaign_paused_log: 'کیمپین روکی گئی',
+      pause_failed: 'روکنے میں ناکام',
+      campaign_paused_local: 'کیمپین مقامی طور پر روکی گئی',
+      campaign_resumed_log: 'کیمپین دوبارہ شروع',
+      resume_failed: 'دوبارہ شروع میں ناکام',
+      campaign_resumed_local: 'کیمپین مقامی طور پر دوبارہ شروع',
+      dashboard_refreshed: 'ڈیش بورڈ ریفریش',
+      logs_cleared: 'لاگز صاف',
+      all_logs_cleared: 'تمام لاگز صاف',
+      logs_exported: 'لاگز ایکسپورٹ',
+      confirm_delete_campaign: 'کیا کیمپین حذف کریں؟',
+      campaign_not_found: 'کیمپین نہیں ملی',
+      campaign_already_running: 'کیمپین پہلے سے چل رہی ہے',
+      loading_campaign: 'کیمپین لوڈ',
+      fill_campaign_name_url: 'کیمپین کا نام اور یو آر ایل درج کریں',
+      campaign_category: 'کیٹیگری',
+      cat_business: 'بزنس',
+      cat_shop: 'شاپ',
+      cat_restaurant: 'ریستوران',
+      cat_keyword_ranking: 'کی ورڈ رینکنگ',
+      cat_local_service: 'لوکل سروس',
+      cat_ecommerce: 'ای کامرس',
+      num_sessions: 'سیشنز کی تعداد',
+      total_visits: 'کل وزٹس',
+      active: 'ایکٹو',
+      run: 'چلائیں',
+      delete_btn: 'حذف',
+      campaign_deleted: 'کیمپین حذف',
+      campaign_saved: 'کیمپین محفوظ',
+      no_proxies_load: 'لوڈ کرنے کے لیے پراکسیز نہیں',
+      loaded: 'لوڈڈ',
+      proxies_loaded_saved: 'پراکسیز لوڈ اور محفوظ',
+      proxies_local_backend_fail: 'پراکسیز مقامی، بیک اینڈ ناکام',
+      proxies_local_backend_unreachable: 'پراکسیز مقامی، بیک اینڈ تک نہیں پہنچا',
+      validating_all_proxies: 'تمام پراکسیز ویلیڈیٹ',
+      checking: 'چیک ہو رہا',
+      successful: 'کامیاب',
+      failed: 'ناکام',
+      proxy_validation_failed: 'پراکسی ویلیڈیشن ناکام',
+      validation_complete: 'ویلیڈیشن مکمل',
+      proxy_validation_api_failed: 'پراکسی ویلیڈیشن API ناکام',
+      no_proxies: 'کوئی پراکسیز نہیں',
+      proxies_cleared: 'پراکسیز صاف',
+      scraping_proxies: 'پراکسیز اسکریپ',
+      scraped_proxies: 'پراکسیز اسکریپ مکمل',
+      scrape_failed: 'اسکریپ ناکام',
+      scrape_no_proxies: 'کوئی پراکسیز نہیں ملی',
+      added_to_list: 'لسٹ میں شامل',
+      system_on: 'سسٹم آن',
+      system_off: 'سسٹم بند',
+      scroll_system_activated: 'اسکرول سسٹم فعال',
+      scroll_system_not_found: 'اسکرول سسٹم نہیں ملا',
+      scroll_preview: 'اسکرول پریویو',
+      pages_to_open: 'کھولنے کے پیجز',
+      scroll_amount: 'اسکرول مقدار',
+      stay_time: 'ری مین ٹائم',
+      scroll_start_failed: 'اسکرول سسٹم شروع ناکام',
+      scroll_error: 'اسکرول ایرر',
+      resolution_category: 'ریزولوشن کیٹگری',
+      ua_desktop: 'ڈیسک ٹاپ',
+      ua_mobile: 'موبائل',
+      resolution_set: 'ریزولوشن سیٹ',
+      invalid_resolution: 'غلط ریزولوشن',
+      resolution_reset_default: 'ریزولوشن ڈیفالٹ پر ری سیٹ',
+      auto_rotate_enabled_log: 'آٹو روٹیٹ فعال',
+      auto_rotate_disabled_log: 'آٹو روٹیٹ غیر فعال',
+      testing_auto_rotate: 'آٹو روٹیٹ ٹیسٹ',
+      thread_label: 'تھریڈ',
+      auto_rotate_preview: 'آٹو روٹیٹ پریویو',
+      mobile_threads_resolution_log: 'موبائل تھریڈز ریزولوشن',
+      br_chromium: 'کرومیئم',
+      br_firefox: 'فائر فاکس',
+      br_other_engines: 'دیگر',
+      br_other: 'دیگر',
+      br_custom: 'کسٹم',
+      run: 'چلائیں',
+      clear: 'ہٹائیں',
+    },
+  };
+
+  // -----------------------------------------------------------------------
+  // Build the English fallback map by scanning all [data-i18n] elements.
+  // This runs after the DOM is parsed (script is loaded at end of body).
+  // -----------------------------------------------------------------------
+  function buildEnglishMap() {
+    EN.length = 0;
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      const key = el.getAttribute('data-i18n');
+      if (key && !EN[key]) {
+        EN[key] = el.textContent.trim();
+      }
+    });
+    // Also harvest placeholders.
+    document.querySelectorAll('[data-i18n-ph]').forEach((el) => {
+      const key = el.getAttribute('data-i18n-ph');
+      if (key && !EN[key]) {
+        EN[key] = el.getAttribute('placeholder') || '';
+      }
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // t(key) — translate. Order of resolution:
+  //   1. Active language dictionary (LANGS[currentLang][key])
+  //   2. English fallback map harvested from DOM (EN[key])
+  //   3. The key itself
+  // -----------------------------------------------------------------------
+  function t(key) {
+    const lang = LANGS[currentLang];
+    if (lang && Object.prototype.hasOwnProperty.call(lang, key)) {
+      return lang[key];
+    }
+    if (EN[key]) return EN[key];
+    if (Object.prototype.hasOwnProperty.call(LANGS.en, key)) return LANGS.en[key];
+    return key;
+  }
+
+  // Expose t() globally so inline onclick handlers can use it.
+  window.t = t;
+
+  // -----------------------------------------------------------------------
+  // applyTranslations() — re-render all [data-i18n] / [data-i18n-ph] elements
+  // with the active language.
+  // -----------------------------------------------------------------------
+  function applyTranslations() {
+    document.querySelectorAll('[data-i18n]').forEach((el) => {
+      const key = el.getAttribute('data-i18n');
+      if (key) el.textContent = t(key);
+    });
+    document.querySelectorAll('[data-i18n-ph]').forEach((el) => {
+      const key = el.getAttribute('data-i18n-ph');
+      if (key) el.setAttribute('placeholder', t(key));
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // initLanguage() — build the English map, read saved language, apply.
+  // -----------------------------------------------------------------------
+  function initLanguage() {
+    buildEnglishMap();
+    let saved = 'en';
+    try { saved = localStorage.getItem('appLanguage') || 'en'; } catch (e) {}
+    // Map full language names (from the <select>) to codes.
+    const nameToCode = {
+      english: 'en', urdu: 'ur', arabic: 'ar', spanish: 'es',
+      indonesian: 'id', chinese: 'zh',
+    };
+    const lower = String(saved).toLowerCase();
+    currentLang = nameToCode[lower] || (LANGS[lower] ? lower : 'en');
+    applyTranslations();
+    // Reflect the saved language in the <select> if present.
+    const sel = document.getElementById('appLanguage');
+    if (sel) {
+      const codeToName = {};
+      Object.keys(nameToCode).forEach((n) => { codeToName[nameToCode[n]] = n.charAt(0).toUpperCase() + n.slice(1); });
+      const name = codeToName[currentLang];
+      if (name) {
+        for (let i = 0; i < sel.options.length; i++) {
+          if (sel.options[i].value.toLowerCase() === name.toLowerCase() ||
+              sel.options[i].textContent.toLowerCase() === name.toLowerCase()) {
+            sel.selectedIndex = i;
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // -----------------------------------------------------------------------
+  // changeLanguage(nameOrCode) — switch language and re-render.
+  // -----------------------------------------------------------------------
+  function changeLanguage(nameOrCode) {
+    const nameToCode = {
+      english: 'en', urdu: 'ur', arabic: 'ar', spanish: 'es',
+      indonesian: 'id', chinese: 'zh',
+    };
+    const lower = String(nameOrCode).toLowerCase();
+    currentLang = nameToCode[lower] || (LANGS[lower] ? lower : 'en');
+    try { localStorage.setItem('appLanguage', currentLang); } catch (e) {}
+    applyTranslations();
+  }
+
+  // Expose globally.
+  window.initLanguage = initLanguage;
+  window.changeLanguage = changeLanguage;
+  window.applyTranslations = applyTranslations;
+  window.__i18nGetCurrentLang = () => currentLang;
+})();

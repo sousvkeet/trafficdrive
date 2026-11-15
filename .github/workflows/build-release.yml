@@ -1,0 +1,94 @@
+name: Build and release
+
+# Builds the Windows installers (NSIS .exe and .msi) on a GitHub-hosted Windows machine, checks the packaged app
+# really starts, and publishes a GitHub Release.
+#   - push a tag like v5.9.0 (it must match "version" in package.json)  -> build + release
+#   - "Run workflow" in the Actions tab                                 -> build only (tick the box to also release)
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Also publish a GitHub Release for the version in package.json'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # needed only to create the release
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Tag must match package.json version
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "refs/tags/v$VERSION" != "$GITHUB_REF" ]; then
+            echo "::error::Tag $GITHUB_REF does not match package.json version $VERSION"
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build installers (.exe and .msi)
+        shell: bash
+        run: npx electron-builder --win --x64 --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Smoke-test the packaged app
+        shell: bash
+        run: node scripts/smoke-packaged.js dist/win-unpacked/TrafficDrive.exe --expect-runtime packaged-app --electron-arg --disable-gpu
+
+      - name: Checksums
+        shell: bash
+        run: |
+          cd dist
+          ls -la *.exe *.msi
+          sha256sum *.exe *.msi | tee SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TrafficDrive-windows
+          path: |
+            dist/*.exe
+            dist/*.msi
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v$(node -p "require('./package.json').version")"
+          cat > release-notes.md <<'NOTES'
+          ## TrafficDrive for Windows
+
+          - **TrafficDrive-Setup-<version>.exe** — installer for one user (no administrator rights needed).
+          - **TrafficDrive-<version>-x64.msi** — installer for all users on the PC (administrator rights needed; suits managed deployments).
+          - **SHA256SUMS.txt** — checksums to verify the downloads.
+
+          These installers are not code-signed, so Windows SmartScreen may show "Windows protected your PC". Choose "More info" then "Run anyway" if you trust this download.
+
+          The app finds Chrome or Edge on the PC by itself. To let an AI assistant (Claude, Cursor, Codex, Gemini, Antigravity and others) control TrafficDrive, open the **AI Assistant** page in the app.
+          NOTES
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG already exists; replacing its files"
+            gh release upload "$TAG" dist/*.exe dist/*.msi dist/SHA256SUMS.txt --clobber
+          else
+            gh release create "$TAG" dist/*.exe dist/*.msi dist/SHA256SUMS.txt --title "TrafficDrive $TAG" --notes-file release-notes.md --target "$GITHUB_SHA"
+          fi
