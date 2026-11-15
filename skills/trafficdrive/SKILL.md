@@ -5,7 +5,7 @@ description: Operate the TrafficDrive desktop app through its MCP server — sta
 
 # TrafficDrive
 
-TrafficDrive drives real browsers (Playwright) to visit pages. The MCP server gives you the same controls as the desktop dashboard: 49 tools, 15 resources (`trafficdrive://…`) and 5 prompts. The tool schemas reach you through MCP, so this skill does not repeat them. It covers what the schemas cannot tell you: the order to work in, the traps, and what to ask the user first.
+TrafficDrive drives real browsers (Playwright) to visit pages. The MCP server gives you the same controls as the desktop dashboard: 51 tools, 15 resources (`trafficdrive://…`) and 5 prompts. The tool schemas reach you through MCP, so this skill does not repeat them. It covers what the schemas cannot tell you: the order to work in, the traps, and what to ask the user first.
 
 ## Ground rules
 
@@ -14,7 +14,7 @@ These exist because a campaign opens real browsers against real websites. Mistak
 1. **Check the target is the user's to test.** Run campaigns against sites the user owns, operates or has permission to test. If the target looks like someone else's site, a competitor, an ad, or a Maps listing the user doesn't manage, ask before starting. Don't use TrafficDrive to inflate ad clicks, game rankings or fake engagement on properties the user doesn't control.
 2. **Prefer `direct` mode for testing.** `organic` and `gmaps` modes interact with third-party services (a search engine, Google Maps) whose terms the user is responsible for. Mention this once when the user picks one of them. Don't lecture.
 3. **Start small.** Run 1–3 sessions first. Scale up only after the small run completed cleanly and the user agreed to the larger numbers. A mistake in a 3-session run costs seconds. In a 5,000-session run it costs hours.
-4. **Ask before anything destructive or irreversible:** `stop_all_campaigns`, `clear_proxies`, `remove_proxies`, `validate_proxies` with no argument (it **deletes** every dead proxy from the list), and all `delete_*` tools. Name the consequence in your question.
+4. **Ask before anything destructive or irreversible:** `stop_all_campaigns`, `clear_proxies`, `remove_proxies`, `validate_proxies` with no `proxies` argument (by default it **deletes** the dead proxies from the list; `removeDead: false` only marks them), and all `delete_*` tools. Name the consequence in your question.
 5. **Keep secrets out of your replies.** Proxies can carry `user:pass`. Tools mask credentials when reading back. Don't repeat the ones the user gave you, and don't paste them into saved campaigns, notes or logs you write.
 6. **Never invent paths or URLs for the app to fetch.** `customBrowserPath` only accepts paths from `list_browsers`. `install_browser` takes an id from `list_browser_catalog`, never a download URL. If a call is refused for this reason, use the proper tool rather than trying to get around it.
 7. **Don't try to beat CAPTCHAs.** The app only *pauses* when it detects one, so a person can solve it in a visible window. See `references/troubleshooting.md`.
@@ -61,7 +61,8 @@ These exist because a campaign opens real browsers against real websites. Mistak
 ## Proxies
 
 - Accepted formats: `host:port`, `host:port:user:pass`, `user:pass@host:port`, `scheme://[user:pass@]host:port` (http, https, socks4, socks5). Duplicates are ignored.
-- Prefer the user's own proxies. `scrape_free_proxies` loads public lists that are slow, short-lived and untrusted. Offer it only if the user agrees, and say not to send sensitive traffic through them. Run `validate_proxies` afterwards, which removes dead ones, so ask first if the list is large.
+- Prefer the user's own proxies. `scrape_free_proxies` downloads the public lists that are switched on (`list_proxy_sources` shows them; `set_proxy_source_enabled` switches one; `sourceIds` limits one run) in about 15 seconds. Those proxies are slow, short-lived and untrusted: offer it only if the user agrees, and say not to send sensitive traffic through them. Only the user can add a new source, in the app, so don't try.
+- `validate_proxies` tests many proxies at once, so thousands take about a minute, not an hour. A proxy only counts as working if the real test server answers through it. With no `proxies` argument it checks the loaded list and, by default, **removes the dead ones**, so ask first (`removeDead: false` keeps them marked instead). `stopAfterWorking: 50` ends the run as soon as 50 work, and `onlyUnchecked: true` skips proxies already checked. Typically only about one free proxy in five works.
 - Giving `proxies` to `validate_proxies` tests only those entries and removes nothing.
 
 ## Scheduling, saved campaigns, recordings

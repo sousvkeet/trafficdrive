@@ -206,19 +206,22 @@ function registerTools(server, ctx) {
   // ═════════════════════════════ Proxies ══════════════════════════════════════
   tool('list_proxies', {
     title: 'List loaded proxies',
-    description: 'Show the proxies loaded in the backend (credentials are masked). Campaigns use them when useLoadedProxies is true.',
+    description: 'Show the proxies loaded in the backend (credentials are masked), with how many are working, dead or not yet checked. Campaigns use the ones not found dead when useLoadedProxies is true.',
     inputSchema: {
       type: z.enum(['http', 'https', 'socks4', 'socks5']).optional().describe('Only this protocol.'),
+      status: z.enum(['working', 'dead', 'unchecked']).optional().describe('Only proxies with this check result.'),
       limit: z.number().int().min(1).max(500).default(50),
       offset: z.number().int().min(0).default(0),
     }, annotations: READ,
-  }, async ({ type, limit, offset }) => {
+  }, async ({ type, status, limit, offset }) => {
     const r = await api.get('/api/proxies');
     const byType = {};
     r.proxies.forEach((p) => { byType[p.type] = (byType[p.type] || 0) + 1; });
-    const filtered = type ? r.proxies.filter((p) => p.type === type) : r.proxies;
-    return ok({ total: r.proxies.length, byType, matching: filtered.length, proxies: filtered.slice(offset, offset + limit).map(maskProxy) },
-      `${r.proxies.length} proxy(ies) loaded.`);
+    let filtered = type ? r.proxies.filter((p) => p.type === type) : r.proxies;
+    if (status) filtered = filtered.filter((p) => (status === 'unchecked' ? !p.status : p.status === status));
+    const { total, working, dead, unchecked, avgMs } = r.stats;
+    return ok({ total, working, dead, unchecked, avgMs, byType, matching: filtered.length, proxies: filtered.slice(offset, offset + limit).map(maskProxy) },
+      `${total} proxy(ies) loaded: ${working} working, ${dead} dead, ${unchecked} not checked yet.`);
   });
 
   tool('add_proxies', {
@@ -241,33 +244,81 @@ function registerTools(server, ctx) {
       `Added ${r.count - before} proxy(ies); ${r.count} loaded.${invalid.length ? ` ${invalid.length} entr${invalid.length === 1 ? 'y was' : 'ies were'} invalid.` : ''} Run validate_proxies to drop dead ones.`);
   });
 
+  tool('list_proxy_sources', {
+    title: 'List proxy sources',
+    description: 'The lists scrape_free_proxies downloads from (the "Proxy sources" card in the app): the built-in ones plus any the user added, each with whether it is switched on and how its last download went. Assistants cannot add, edit or remove sources — only the user can, in the app.',
+    inputSchema: {}, annotations: READ,
+  }, async () => {
+    const r = await api.get('/api/proxies/sources');
+    const sources = r.sources.map(({ id, name, type, builtin, enabled, lastRun }) => ({ id, name, type, builtin, enabled, lastRun }));
+    return ok({ total: sources.length, enabled: sources.filter((x) => x.enabled).length, sources }, `${sources.length} source(s), ${sources.filter((x) => x.enabled).length} switched on.`);
+  });
+
+  tool('set_proxy_source_enabled', {
+    title: 'Switch a proxy source on or off',
+    description: 'Include or exclude one source when scrape_free_proxies runs without sourceIds. Does not delete anything.',
+    inputSchema: { id: z.string().min(1).max(80).describe('Source id from list_proxy_sources'), enabled: z.boolean() }, annotations: WRITE_IDEMPOTENT,
+  }, async ({ id, enabled }) => {
+    const r = await api.post('/api/proxies/sources/update', { id, enabled });
+    return ok({ id, name: r.source.name, enabled: r.source.enabled }, `"${r.source.name}" is now ${r.source.enabled ? 'on' : 'off'}.`);
+  });
+
   tool('scrape_free_proxies', {
     title: 'Scrape free proxies',
-    description: 'Download public free proxy lists and add them. Free public proxies are slow, short-lived and untrusted — run validate_proxies afterwards and avoid sending sensitive traffic through them. Takes up to a minute or two.',
-    inputSchema: {}, annotations: { ...WRITE, openWorldHint: true },
-  }, async () => {
-    const r = await api.post('/api/proxies/scrape', {}, { timeoutMs: 240000 });
-    return ok({ found: r.scraped, newlyAdded: r.added, totalLoaded: r.total }, `Found ${r.scraped} proxies (${r.added} new); ${r.total} loaded. Run validate_proxies next.`);
+    description: 'Download the public proxy lists that are switched on (see list_proxy_sources) — or only the given sourceIds — all at once, and add what they contain. Free public proxies are slow, short-lived and untrusted: run validate_proxies afterwards and avoid sending sensitive traffic through them. Takes about 15 seconds.',
+    inputSchema: { sourceIds: z.array(z.string().min(1).max(80)).min(1).max(60).optional().describe('Only these sources (ids from list_proxy_sources), even if switched off.') },
+    annotations: { ...WRITE, openWorldHint: true },
+  }, async ({ sourceIds }) => {
+    const r = await api.post('/api/proxies/scrape', sourceIds ? { sourceIds } : {}, { timeoutMs: 120000 });
+    const sources = r.results.map(({ name, ok: good, count, error }) => ({ name, ok: good && !error, found: count, ...(error ? { problem: error } : {}) }));
+    return ok({ found: r.scraped, newlyAdded: r.added, totalLoaded: r.total, sources },
+      `Found ${r.scraped} proxies from ${sources.filter((x) => x.ok).length}/${sources.length} sources (${r.added} new); ${r.total} loaded. Run validate_proxies next.`);
   });
 
   tool('validate_proxies', {
     title: 'Validate proxies',
-    description: 'Test proxies by connecting through each one. With no argument, tests EVERY loaded proxy and removes the dead ones from the loaded list. With "proxies", only tests those entries (nothing is removed). Large lists take several minutes.',
-    inputSchema: { proxies: z.array(z.string().min(1).max(500)).min(1).max(2000).optional().describe('Entries to test instead of the whole loaded list.') },
+    description: 'Test proxies by connecting through each one to a test server (a proxy only counts as working if the real server answers; proxies that hijack the request do not). Many are tested at once, so thousands take about a minute, not an hour. With no "proxies", tests the whole loaded list (or only the not-yet-checked ones) and by default REMOVES the dead ones from it; set removeDead=false to keep them marked. With "proxies", only tests those entries and removes nothing. stopAfterWorking ends the run as soon as that many working proxies are found.',
+    inputSchema: {
+      proxies: z.array(z.string().min(1).max(500)).min(1).max(2000).optional().describe('Entries to test instead of the whole loaded list.'),
+      concurrency: z.number().int().min(1).max(500).optional().describe('How many to test at the same time (default 500).'),
+      timeoutSeconds: z.number().min(1).max(30).optional().describe('Give up on a proxy after this long (default 5).'),
+      stopAfterWorking: z.number().int().min(1).optional().describe('Stop as soon as this many working proxies have been found.'),
+      onlyUnchecked: z.boolean().optional().describe('Loaded list only: skip proxies that were already checked.'),
+      removeDead: z.boolean().default(true).describe('Loaded list only: remove the dead ones when the check completes.'),
+    },
     annotations: { ...DESTRUCTIVE, openWorldHint: true },
-  }, async ({ proxies }, extra) => {
-    let body = {}, parsed = [];
+  }, async ({ proxies, concurrency, timeoutSeconds, stopAfterWorking, onlyUnchecked, removeDead }, extra) => {
+    const opts = { ...(concurrency ? { concurrency } : {}), ...(timeoutSeconds ? { timeoutSeconds } : {}), ...(stopAfterWorking ? { stopAfterWorking } : {}) };
     if (proxies) {
-      parsed = proxies.map((l) => parseProxyLine(l)).filter((r) => r.proxy).map((r) => r.proxy);
+      const parsed = proxies.map((l) => parseProxyLine(l)).filter((r) => r.proxy).map((r) => r.proxy);
       if (!parsed.length) return fail('None of the entries could be parsed.');
-      body = { proxies: parsed };
+      const r = await api.post('/api/proxies/validate', { proxies: parsed, ...opts }, { timeoutMs: 20 * 60 * 1000, signal: extra && extra.signal });
+      const results = r.results.map((x, i) => ({ ...maskProxy(parsed[i]), ok: x.ok, ms: x.ms }));
+      const fastest = results.filter((x) => x.ok).sort((a, b) => a.ms - b.ms).slice(0, 10);
+      return ok({ tested: r.total, working: r.working, dead: r.checked - r.working, notChecked: r.total - r.checked, removedDeadFromLoaded: false, loadedNow: r.stats.total, results: results.slice(0, 200), fastest },
+        `${r.working}/${r.total} proxies work.`);
     }
-    const r = await api.post('/api/proxies/validate', body, { timeoutMs: 20 * 60 * 1000, signal: extra && extra.signal });
-    const subject = proxies ? parsed : (await api.get('/api/proxies')).proxies; // after validation: working ones remain
-    const results = r.results.map((x, i) => ({ ...(proxies ? maskProxy(parsed[i]) : {}), ok: x.ok, ms: x.ms }));
-    const fastest = results.filter((x) => x.ok && proxies).sort((a, b) => a.ms - b.ms).slice(0, 10);
-    return ok({ tested: r.total, working: r.working, dead: r.total - r.working, removedDeadFromLoaded: !proxies, loadedNow: subject.length, ...(proxies ? { results: results.slice(0, 200) } : { fastestMs: r.results.filter((x) => x.ok).map((x) => x.ms).sort((a, b) => a - b).slice(0, 5) }), ...(fastest.length ? { fastest } : {}) },
-      `${r.working}/${r.total} proxies work${proxies ? '' : '; dead ones were removed'}.`);
+    const started = await api.post('/api/proxies/validate/start', { ...opts, onlyUnchecked: !!onlyUnchecked, removeDead: removeDead !== false });
+    const id = started.job.id;
+    const token = extra && extra._meta && extra._meta.progressToken;
+    let job = started.job, tick = 0, lastMsg = '';
+    for (;;) {
+      const s = await api.get('/api/proxies/validate/status', { query: { id }, signal: extra && extra.signal });
+      job = s.job;
+      const msg = `${job.done}/${job.total} checked · ${job.working} working · ${job.dead} dead`;
+      if (token !== undefined && msg !== lastMsg) {
+        lastMsg = msg;
+        await extra.sendNotification({ method: 'notifications/progress', params: { progressToken: token, progress: ++tick, total: job.total, message: msg } }).catch(() => {});
+      }
+      if (job.status !== 'running') break;
+      if (extra && extra.signal && extra.signal.aborted) { await api.post('/api/proxies/validate/cancel', {}).catch(() => {}); return fail('Cancelled; the check was stopped and nothing was removed.'); }
+      await sleep(1000, extra && extra.signal);
+    }
+    if (job.status === 'error') return fail(job.error);
+    const top = await api.get('/api/proxies', { query: { status: 'working', sort: 'speed', limit: 10 } });
+    const removed = job.options.removeDead && job.status === 'done';
+    return ok({ tested: job.total, checked: job.done, working: job.working, dead: job.dead, notChecked: job.total - job.done, stoppedEarly: job.stoppedEarly, cancelled: job.status === 'cancelled', removedDeadFromLoaded: removed, removed: job.removed, loadedNow: top.stats.total, avgMs: job.avgMs, seconds: Math.round(job.elapsedMs / 1000), fastest: top.proxies.map(maskProxy) },
+      `${job.working}/${job.done} proxies work (${Math.round(job.elapsedMs / 1000)} s)${removed ? `; ${job.removed} dead removed` : ''}${job.stoppedEarly ? '; stopped early' : ''}${job.status === 'cancelled' ? '; cancelled' : ''}.`);
   });
 
   tool('remove_proxies', {

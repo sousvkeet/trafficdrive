@@ -137,6 +137,10 @@ const getJson = async (url, token) => { const r = await httpGet(url, token); ret
         ok(mi.json.launch && mi.json.launch.env && mi.json.launch.env.ELECTRON_RUN_AS_NODE === '1' && fs.existsSync(mi.json.launch.command) && fs.existsSync(mi.json.launch.args[0]), 'the launch command it gives assistants points at files that exist (no Node.js needed)', mi.json.launch && mi.json.launch.command);
         const det = await getJson(info.url + '/api/mcp/detect', info.token);
         ok(det.json.success && det.json.assistants.length >= 14 && det.json.skill && det.json.skill.files >= 3, 'assistant detection works and the skill files are bundled', det.json.skill && JSON.stringify(det.json.skill));
+        const src = await getJson(info.url + '/api/proxies/sources', info.token);
+        ok(src.json.success && src.json.sources.length >= 8 && src.json.sources.every((x) => x.builtin && x.enabled), 'the proxy sources are listed (the built-in ones, switched on)', `${src.json.sources.length} sources`);
+        const pl = await getJson(info.url + '/api/proxies?limit=10', info.token);
+        ok(pl.json.success && pl.json.stats && pl.json.stats.total === 0, 'the proxy list answers (empty on a fresh start)', JSON.stringify(pl.json.stats));
         const zip = await httpGet(info.url + '/api/mcp/skill.zip', info.token, true);
         ok(zip.status === 200 && zip.body.slice(0, 2).toString() === 'PK' && zip.body.length > 1000, 'the skill download is a real zip', `${zip.status}, ${zip.body.length} bytes`);
 

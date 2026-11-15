@@ -47,7 +47,9 @@ The app only **detects** a CAPTCHA and **pauses** that session so a person can s
 ## Proxies
 
 - Free scraped proxies (`scrape_free_proxies`) are slow, short-lived and untrusted. A high failure rate with them is expected. Suggest the user's own proxies.
-- `validate_proxies` with no argument deletes dead proxies from the loaded list. With a `proxies` list it tests only those and removes nothing.
+- `validate_proxies` with no `proxies` argument checks the loaded list and removes the dead ones unless `removeDead` is `false`. With a `proxies` list it tests only those and removes nothing.
+- "Cannot reach the test server" means the computer itself cannot reach the internet (or a firewall blocks the test server). Nothing was marked dead or removed. Fix the connection and run it again.
+- A low share of working proxies is normal for free lists (typically around one in five). A source that fails shows its reason in `scrape_free_proxies` (for example `HTTP 502` when the provider is down); try again later or switch it off with `set_proxy_source_enabled`.
 - If sessions seem to ignore your proxy settings, check that proxies are loaded at all (`list_proxies`) and that `useLoadedProxies` wasn't set to `false`.
 - Credentials are masked by every tool. You can't read them back. If the user needs to correct one, remove and re-add the proxy.
 

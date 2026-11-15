@@ -33,7 +33,6 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const crypto = require('crypto');
-const { SocksClient } = require('socks'); // SOCKS4/5 proxy support
 const extractZip = require('extract-zip'); // Browser zip extraction
 const PrivacyCatalog = require('./PrivacyCatalog.js');
 const LibraryCatalog = require('./LibraryCatalog.js');
@@ -534,212 +533,95 @@ function prepareSchedule(body, existing) {
 
 const MAX_REDIRECTS = 5;
 
-function fetchText(url, timeoutMs = 15000, redirectsLeft = MAX_REDIRECTS) {
-  return new Promise((resolve, reject) => {
-    const u = new URL(url);
-    const lib = u.protocol === 'https:' ? https : http;
-    const req = lib.get(url, { timeout: timeoutMs, headers: { 'User-Agent': 'Mozilla/5.0' } }, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        // Follow redirect (bounded; Location may be relative)
-        res.resume();
-        if (redirectsLeft <= 0) { reject(new Error('Too many redirects')); return; }
-        let next;
-        try { next = new URL(res.headers.location, url).toString(); } catch (e) { reject(e); return; }
-        fetchText(next, timeoutMs, redirectsLeft - 1).then(resolve).catch(reject);
-        return;
-      }
-      if (res.statusCode < 200 || res.statusCode >= 300) {
-        res.resume();
-        reject(new Error(`HTTP ${res.statusCode}`));
-        return;
-      }
-      let data = '';
-      res.setEncoding('utf8');
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => resolve(data));
-    });
-    req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
-    req.on('error', reject);
-  });
+// --- Proxies: parsing, sources, validation ----------------------------------
+// Parsing lives in ProxyTools.js, the list of download sources in ProxySources.js and the checker in
+// ProxyValidator.js. Each proxy in the list can carry status ('working' | 'dead'), ms and checkedAt once checked.
+const ProxyTools = require('./ProxyTools.js');
+const ProxySources = require('./ProxySources.js');
+const { ValidationJob } = require('./ProxyValidator.js');
+const proxySources = ProxySources.createSourceStore(path.join(appDataDir(), 'proxy-sources.json'));
+
+const clampInt = (v, lo, hi, d) => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
+
+// Only the fields we know, validated — never whatever a client sent (that includes status/ms).
+function cleanProxyRecord(p) {
+  if (!p || typeof p !== 'object') return null;
+  const host = typeof p.host === 'string' ? p.host.trim() : '';
+  const port = parseInt(p.port, 10);
+  if (!host || !ProxyTools.validHost(host) || !(port >= 1 && port <= 65535)) return null;
+  const type = ProxyTools.SCHEMES.includes(String(p.type).toLowerCase()) ? String(p.type).toLowerCase() : 'http';
+  const str = (v) => (typeof v === 'string' && v ? v.slice(0, 200) : null);
+  return { type, host, port, username: str(p.username), password: str(p.password), raw: `${host}:${port}` };
 }
 
-async function scrapeProxyList() {
-  const proxies = [];
-  const seen = new Set();
-
-  // Helper to add a proxy without duplicates — validates that host looks like
-  // a real IP address or hostname (not "error code" or other junk text).
-  function isValidHost(h) {
-    if (!h || typeof h !== 'string') return false;
-    // IPv4
-    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return true;
-    // Hostname (at least one dot, alphanumeric + hyphens, no spaces)
-    if (/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/i.test(h)) return true;
-    return false;
+function addToProxyList(records) {
+  const seen = new Set(loadedProxies.map(ProxyTools.dedupeKey));
+  let added = 0, invalid = 0;
+  for (const r of records) {
+    const p = cleanProxyRecord(r);
+    if (!p) { invalid++; continue; }
+    const k = ProxyTools.dedupeKey(p);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    loadedProxies.push(p);
+    added++;
   }
-  function addProxy(type, host, port) {
-    if (!isValidHost(host)) return;
-    const portNum = parseInt(port, 10);
-    if (!portNum || portNum < 1 || portNum > 65535) return;
-    const key = `${type}:${host}:${portNum}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    proxies.push({ type, host, port: portNum, username: null, password: null, raw: `${host}:${portNum}` });
-  }
-
-  // Source 1: ProxyScrape API — supports http, socks4, socks5
-  const psProtocols = [
-    { proto: 'http', type: 'http' },
-    { proto: 'socks4', type: 'socks4' },
-    { proto: 'socks5', type: 'socks5' },
-  ];
-  for (const { proto, type } of psProtocols) {
-    try {
-      const url = `https://api.proxyscrape.com/v2/?request=getproxies&protocol=${proto}&timeout=10000&country=all&ssl=all&anonymity=all`;
-      const text = await fetchText(url, 15000);
-      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      for (const line of lines) {
-        const parts = line.split(':');
-        if (parts.length >= 2 && parts[0] && parts[1]) {
-          addProxy(type, parts[0], parts[1]);
-        }
-      }
-    } catch (_) {}
-  }
-
-  // Source 2: GeoNode API — returns JSON with ip + port + protocols
-  try {
-    const url = 'https://proxylist.geonode.com/api/proxy-list?limit=500&page=1&sort_by=lastChecked&sort_type=desc';
-    const text = await fetchText(url, 15000);
-    const data = JSON.parse(text);
-    if (data && Array.isArray(data.data)) {
-      for (const p of data.data) {
-        if (p.ip && p.port) {
-          const protos = Array.isArray(p.protocols) ? p.protocols : [p.protocols || 'http'];
-          for (const proto of protos) {
-            const type = String(proto).toLowerCase().includes('socks4') ? 'socks4'
-                       : String(proto).toLowerCase().includes('socks5') ? 'socks5'
-                       : String(proto).toLowerCase().includes('https') ? 'https'
-                       : 'http';
-            addProxy(type, p.ip, p.port);
-          }
-        }
-      }
-    }
-  } catch (_) {}
-
-  // Source 3: proxy-list.download — supports http, https, socks4, socks5
-  const pldTypes = [
-    { urlType: 'http', type: 'http' },
-    { urlType: 'https', type: 'https' },
-    { urlType: 'socks4', type: 'socks4' },
-    { urlType: 'socks5', type: 'socks5' },
-  ];
-  for (const { urlType, type } of pldTypes) {
-    try {
-      const url = `https://www.proxy-list.download/api/v1/get?type=${urlType}`;
-      const text = await fetchText(url, 15000);
-      const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-      for (const line of lines) {
-        const parts = line.split(':');
-        if (parts.length >= 2 && parts[0] && parts[1]) {
-          addProxy(type, parts[0], parts[1]);
-        }
-      }
-    } catch (_) {}
-  }
-
-  return proxies;
+  return { added, invalid, duplicates: records.length - added - invalid };
 }
 
-// --- Proxy validation helper ---------------------------------------------
-// Tests a single proxy by connecting through it to a target URL. Returns
-// { ok, ms } — ok=true if the proxy responded within the timeout.
-// Tunnel through a SOCKS4/5 proxy to httpbin.org:80 and check that a real
-// HTTP response comes back. (The `socks` package only exports SocksClient —
-// there is no SocksAgent, which is why SOCKS validation used to crash.)
-function validateSocksProxy(proxy, socksType, timeoutMs, start) {
-  return new Promise((resolve) => {
-    let settled = false;
-    let socket = null;
-    const finish = (ok) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      try { if (socket) socket.destroy(); } catch (_) {}
-      resolve({ ok, ms: ok ? Date.now() - start : 0 });
-    };
-    const timer = setTimeout(() => finish(false), timeoutMs);
-    SocksClient.createConnection({
-      proxy: {
-        host: proxy.host,
-        port: parseInt(proxy.port, 10),
-        type: socksType,
-        ...(proxy.username ? { userId: proxy.username } : {}),
-        ...(proxy.password ? { password: proxy.password } : {}),
-      },
-      command: 'connect',
-      destination: { host: 'httpbin.org', port: 80 },
-      timeout: timeoutMs,
-    }).then(({ socket: s }) => {
-      socket = s;
-      if (settled) { s.destroy(); return; }
-      let buf = '';
-      s.setEncoding('utf8');
-      s.on('data', (chunk) => {
-        buf += chunk;
-        if (buf.length >= 12) finish(/^HTTP\/1\.[01] [23]\d\d/.test(buf));
-      });
-      s.on('error', () => finish(false));
-      s.on('close', () => finish(/^HTTP\/1\.[01] [23]\d\d/.test(buf)));
-      s.write('GET /ip HTTP/1.1\r\nHost: httpbin.org\r\nUser-Agent: Mozilla/5.0\r\nConnection: close\r\n\r\n');
-    }).catch(() => finish(false));
-  });
+function proxyStats() {
+  let working = 0, dead = 0, sum = 0;
+  for (const p of loadedProxies) {
+    if (p.status === 'working') { working++; if (typeof p.ms === 'number') sum += p.ms; } else if (p.status === 'dead') dead++;
+  }
+  return { total: loadedProxies.length, working, dead, unchecked: loadedProxies.length - working - dead, avgMs: working ? Math.round(sum / working) : null };
 }
 
-function validateProxy(proxy, timeoutMs = 10000) {
-  return new Promise((resolve) => {
-   try {
-    const start = Date.now();
-    const type = String((proxy && proxy.type) || 'http').toLowerCase();
-    const host = proxy && proxy.host;
-    const port = parseInt(proxy && proxy.port, 10);
-    if (!host || !port) { resolve({ ok: false, ms: 0 }); return; }
+const validationJobs = new Map();
+let activeValidation = null;
+let validationSeq = 0;
 
-    // For SOCKS proxies, use the socks library
-    if (type.startsWith('socks')) {
-      validateSocksProxy(proxy, type === 'socks4' ? 4 : 5, timeoutMs, start).then(resolve);
-      return;
-    }
+function validationOptions(body) {
+  const secs = body.timeoutSeconds !== undefined ? Math.round(Number(body.timeoutSeconds) * 1000) : body.timeoutMs;
+  const stop = clampInt(body.stopAfterWorking, 1, 1000000, 0);
+  return {
+    concurrency: clampInt(body.concurrency, 1, 500, 500),
+    timeoutMs: clampInt(secs, 1000, 30000, 5000),
+    stopAfterWorking: stop || null,
+    removeDead: body.removeDead !== undefined ? !!body.removeDead : true,
+    onlyUnchecked: !!body.onlyUnchecked,
+  };
+}
 
-    // For HTTP/HTTPS proxies, use the http/https module with a proxy URL
-    const proxyUrl = new URL(`${type}://${host}:${port}`);
-    const testUrl = 'http://httpbin.org/ip';
-    const testU = new URL(testUrl);
-    const options = {
-      hostname: proxyUrl.hostname,
-      port: proxyUrl.port,
-      path: testUrl,
-      method: 'GET',
-      headers: { Host: testU.hostname, 'User-Agent': 'Mozilla/5.0' },
-      timeout: timeoutMs,
-    };
-    if (proxy.username) {
-      const auth = Buffer.from(`${proxy.username}:${proxy.password || ''}`).toString('base64');
-      options.headers['Proxy-Authorization'] = `Basic ${auth}`;
+// Start checking either the proxies given in the request (nothing is removed) or the loaded list.
+function beginValidation(body) {
+  if (activeValidation && activeValidation.status === 'running') { const e = new Error('A proxy check is already running'); e.status = 409; throw e; }
+  const opts = validationOptions(body);
+  let subject, onLoaded = false;
+  if (Array.isArray(body.proxies) && body.proxies.length) {
+    subject = body.proxies.map(cleanProxyRecord).filter(Boolean);
+    opts.removeDead = false;
+  } else {
+    onLoaded = true;
+    subject = opts.onlyUnchecked ? loadedProxies.filter((p) => !p.status) : loadedProxies.slice();
+  }
+  if (!subject.length) {
+    const e = new Error(onLoaded && opts.onlyUnchecked && loadedProxies.length ? 'Every proxy has already been checked' : 'There are no proxies to check');
+    e.status = 400; throw e;
+  }
+  opts.onFinish = (job) => {
+    // Only a completed check of the loaded list removes dead proxies (a cancelled or failed one never does).
+    if (onLoaded && opts.removeDead && job.status === 'done') {
+      const before = loadedProxies.length;
+      loadedProxies = loadedProxies.filter((p) => p.status !== 'dead');
+      job.removed = before - loadedProxies.length;
     }
-    const req = http.request(options, (res) => {
-      res.resume();
-      res.on('end', () => resolve({ ok: res.statusCode < 400, ms: Date.now() - start }));
-    });
-    req.on('timeout', () => { req.destroy(); resolve({ ok: false, ms: 0 }); });
-    req.on('error', () => resolve({ ok: false, ms: 0 }));
-    req.end();
-   } catch (_) {
-    // A malformed proxy record must never fail the whole batch.
-    resolve({ ok: false, ms: 0 });
-   }
-  });
+  };
+  const job = new ValidationJob('val_' + (++validationSeq), subject, opts);
+  validationJobs.set(job.id, job);
+  activeValidation = job;
+  while (validationJobs.size > 5) validationJobs.delete(validationJobs.keys().next().value);
+  return job;
 }
 
 // --- Browser install manager ----------------------------------------------
@@ -1323,7 +1205,7 @@ function normalizeUrlInput(value, required, label) {
 // one); otherwise API callers can ask for the proxies loaded on the backend.
 function resolveProxies(body) {
   if (body.proxies !== undefined && body.proxies !== null) return normalizeProxies(body.proxies);
-  if (body.useLoadedProxies) return normalizeProxies(loadedProxies.slice());
+  if (body.useLoadedProxies) return normalizeProxies(loadedProxies.filter((p) => p.status !== 'dead'));
   return normalizeProxies(null);
 }
 
@@ -2118,75 +2000,125 @@ async function handleRequest(req, res) {
     return;
   }
 
-  // --- Proxies: GET ---
+  // --- Proxies: list. No query = the whole list; with limit/offset/status/type/q/sort = one filtered page;
+  //     usable=1 = everything except proxies already found dead (what a campaign should use). ---
   if (pathname === '/api/proxies' && method === 'GET') {
-    sendJSON(res, 200, { success: true, proxies: loadedProxies });
+    const sp = parsed.searchParams;
+    const stats = proxyStats();
+    if (sp.get('usable') === '1') { sendJSON(res, 200, { success: true, proxies: loadedProxies.filter((p) => p.status !== 'dead'), stats }); return; }
+    if (!['limit', 'offset', 'status', 'type', 'q', 'sort'].some((k) => sp.has(k))) { sendJSON(res, 200, { success: true, proxies: loadedProxies, stats }); return; }
+    let list = loadedProxies;
+    const status = sp.get('status');
+    if (status && status !== 'all') list = list.filter((p) => (status === 'unchecked' ? !p.status : p.status === status));
+    const type = sp.get('type');
+    if (type && type !== 'all') list = list.filter((p) => p.type === type);
+    const q = (sp.get('q') || '').trim().toLowerCase();
+    if (q) list = list.filter((p) => `${p.host}:${p.port}`.includes(q));
+    if (sp.get('sort') === 'speed') list = list.slice().sort((a, b) => (a.ms == null ? 1e12 : a.ms) - (b.ms == null ? 1e12 : b.ms));
+    const limit = clampInt(sp.get('limit'), 1, 1000, 100), offset = clampInt(sp.get('offset'), 0, 1e9, 0);
+    sendJSON(res, 200, { success: true, proxies: list.slice(offset, offset + limit), filtered: list.length, offset, limit, stats });
     return;
   }
 
-  // --- Proxies: load (append to existing list) ---
+  // --- Proxies: load. Either ready records (`proxies`) or pasted text (`text` + default `type`); duplicates are skipped. ---
   if (pathname === '/api/proxies/load' && method === 'POST') {
     const body = await readBody(req);
-    const incoming = Array.isArray(body.proxies) ? body.proxies : [];
-    // De-duplicate by host:port:type to avoid loading the same proxy twice
-    const seen = new Set(loadedProxies.map(p => `${p.type}:${p.host}:${p.port}`));
-    for (const p of incoming) {
-      const key = `${p.type}:${p.host}:${p.port}`;
-      if (!seen.has(key)) {
-        loadedProxies.push(p);
-        seen.add(key);
-      }
+    let records = Array.isArray(body.proxies) ? body.proxies : [];
+    let badLines = 0;
+    if (typeof body.text === 'string' && body.text.trim()) {
+      const type = ProxyTools.SCHEMES.includes(String(body.type).toLowerCase()) ? String(body.type).toLowerCase() : 'http';
+      const t = ProxyTools.parseText(body.text, type);
+      records = records.concat(t.proxies);
+      badLines = t.invalid;
     }
-    sendJSON(res, 200, { success: true, count: loadedProxies.length, added: incoming.length });
+    const r = addToProxyList(records);
+    sendJSON(res, 200, { success: true, count: loadedProxies.length, added: r.added, duplicates: r.duplicates, invalid: r.invalid + badLines, stats: proxyStats() });
     return;
   }
 
-  // --- Proxies: scrape (fetch free proxies from public sources) ---
-  if (pathname === '/api/proxies/scrape' && method === 'POST') {
+  // --- Proxy sources: the lists "Scrape" downloads. Built-ins can be switched off; the user can add their own. ---
+  if (pathname === '/api/proxies/sources' && method === 'GET') {
+    sendJSON(res, 200, { success: true, sources: proxySources.list() });
+    return;
+  }
+  if (pathname === '/api/proxies/sources' && method === 'POST') {
+    // An assistant must not be able to point the app at a proxy list of its choosing (the proxies it contains would
+    // then carry the user's traffic). Sources are added from the app only.
+    if (req.headers['x-td-client'] === 'mcp') { sendJSON(res, 403, { success: false, error: 'Proxy sources can only be added from the app itself, not by an AI assistant' }); return; }
+    const body = await readBody(req).catch(() => ({}));
+    try { sendJSON(res, 200, { success: true, source: proxySources.add(body), sources: proxySources.list() }); }
+    catch (e) { sendJSON(res, 400, { success: false, error: e.message }); }
+    return;
+  }
+  if (pathname === '/api/proxies/sources/update' && method === 'POST') {
+    const body = await readBody(req).catch(() => ({}));
+    const id = String(body.id || '');
     try {
-      const scraped = await scrapeProxyList();
-      // Append scraped proxies to the loaded list (de-duplicated)
-      const seen = new Set(loadedProxies.map(p => `${p.type}:${p.host}:${p.port}`));
-      let added = 0;
-      for (const p of scraped) {
-        const key = `${p.type}:${p.host}:${p.port}`;
-        if (!seen.has(key)) {
-          loadedProxies.push(p);
-          seen.add(key);
-          added++;
-        }
+      if ((body.name !== undefined || body.type !== undefined) && req.headers['x-td-client'] === 'mcp') {
+        sendJSON(res, 403, { success: false, error: 'Proxy sources can only be edited from the app itself, not by an AI assistant' }); return;
       }
-      sendJSON(res, 200, { success: true, scraped: scraped.length, added, total: loadedProxies.length, proxies: scraped });
+      if (body.name !== undefined || body.type !== undefined) proxySources.update(id, { name: body.name, type: body.type });
+      if (body.enabled !== undefined) proxySources.setEnabled(id, !!body.enabled);
+      sendJSON(res, 200, { success: true, source: proxySources.get(id), sources: proxySources.list() });
+    } catch (e) { sendJSON(res, e.message === 'Source not found' ? 404 : 400, { success: false, error: e.message }); }
+    return;
+  }
+  if (pathname === '/api/proxies/sources/delete' && method === 'POST') {
+    if (req.headers['x-td-client'] === 'mcp') { sendJSON(res, 403, { success: false, error: 'Proxy sources can only be removed from the app itself, not by an AI assistant' }); return; }
+    const body = await readBody(req).catch(() => ({}));
+    try { proxySources.remove(String(body.id || '')); sendJSON(res, 200, { success: true, sources: proxySources.list() }); }
+    catch (e) { sendJSON(res, e.message === 'Source not found' ? 404 : 400, { success: false, error: e.message }); }
+    return;
+  }
+
+  // --- Proxies: scrape. Downloads every enabled source (or the given sourceIds) in parallel and adds what it finds. ---
+  if (pathname === '/api/proxies/scrape' && method === 'POST') {
+    const body = await readBody(req).catch(() => ({}));
+    const ids = Array.isArray(body.sourceIds) ? body.sourceIds.map(String) : null;
+    const all = proxySources.list();
+    const chosen = ids ? all.filter((x) => ids.includes(x.id)) : all.filter((x) => x.enabled);
+    if (!chosen.length) { sendJSON(res, 400, { success: false, error: ids ? 'None of those sources exist' : 'No sources are switched on — switch at least one on first' }); return; }
+    try {
+      const r = await ProxySources.scrapeSources(chosen, {
+        onResult: (x) => proxySources.recordRun(x.id, { at: Date.now(), ok: x.ok && !x.error, count: x.count, error: x.error, ms: x.ms }),
+      });
+      const add = addToProxyList(r.proxies);
+      sendJSON(res, 200, { success: true, scraped: r.proxies.length, added: add.added, total: loadedProxies.length, results: r.results, stats: proxyStats() });
     } catch (e) {
-      sendJSON(res, e instanceof SyntaxError ? 400 : 500, { success: false, error: e.message });
+      sendJSON(res, 500, { success: false, error: e.message });
     }
     return;
   }
 
-  // --- Proxies: validate (real validation — tests each proxy) ---
+  // --- Proxies: check. start → poll status → (cancel). A job reports progress while it runs. ---
+  if (pathname === '/api/proxies/validate/start' && method === 'POST') {
+    const body = await readBody(req).catch(() => ({}));
+    try { const job = beginValidation(body); sendJSON(res, 200, { success: true, job: job.snapshot() }); }
+    catch (e) { sendJSON(res, e.status || 500, { success: false, error: e.message, ...(e.status === 409 && activeValidation ? { job: activeValidation.snapshot() } : {}) }); }
+    return;
+  }
+  if (pathname === '/api/proxies/validate/status' && method === 'GET') {
+    const wanted = parsed.searchParams.get('id');
+    const job = wanted ? validationJobs.get(wanted) : activeValidation;
+    sendJSON(res, 200, { success: true, job: job ? job.snapshot() : null, stats: proxyStats() });
+    return;
+  }
+  if (pathname === '/api/proxies/validate/cancel' && method === 'POST') {
+    const running = activeValidation && activeValidation.status === 'running';
+    if (running) activeValidation.cancel();
+    sendJSON(res, 200, { success: true, cancelled: !!running, job: activeValidation ? activeValidation.snapshot() : null });
+    return;
+  }
+  // Check and wait for the result in one call (what the MCP server and older clients use).
   if (pathname === '/api/proxies/validate' && method === 'POST') {
     const body = await readBody(req).catch(() => ({}));
-    const toValidate = Array.isArray(body.proxies) && body.proxies.length > 0 ? body.proxies : loadedProxies;
-    // Validate in batches of 20 to avoid overwhelming the network
-    const batchSize = 20;
-    const results = [];
-    for (let i = 0; i < toValidate.length; i += batchSize) {
-      const batch = toValidate.slice(i, i + batchSize);
-      const batchResults = await Promise.all(batch.map(p => validateProxy(p, 8000)));
-      results.push(...batchResults);
-    }
-    // Update loadedProxies to keep only working ones
-    const workingProxies = [];
-    for (let i = 0; i < toValidate.length; i++) {
-      if (results[i] && results[i].ok) {
-        workingProxies.push(toValidate[i]);
-      }
-    }
-    // If we validated the full loaded list, replace with working ones
-    if (toValidate === loadedProxies) {
-      loadedProxies = workingProxies;
-    }
-    sendJSON(res, 200, { success: true, results, working: workingProxies.length, total: toValidate.length });
+    let job;
+    try { job = beginValidation(body); } catch (e) { sendJSON(res, e.status || 500, { success: false, error: e.message }); return; }
+    res.on('close', () => { if (!res.writableEnded) job.cancel(); });   // the caller gave up — stop wasting connections
+    await job.finished;
+    if (job.status === 'error') { sendJSON(res, 503, { success: false, error: job.error }); return; }
+    const results = Array.from(job.results, (r) => r || { ok: false, ms: 0, skipped: true });
+    sendJSON(res, 200, { success: true, results, working: job.working, total: job.total, checked: job.done, removed: job.removed, stoppedEarly: job.stoppedEarly, cancelled: job.status === 'cancelled', elapsedMs: job.finishedAt - job.startedAt, stats: proxyStats() });
     return;
   }
 
@@ -2205,8 +2137,17 @@ async function handleRequest(req, res) {
 
   // --- Proxies: clear all ---
   if (pathname === '/api/proxies/clear' && method === 'POST') {
+    if (activeValidation && activeValidation.status === 'running') activeValidation.cancel();
     loadedProxies = [];
     sendJSON(res, 200, { success: true });
+    return;
+  }
+
+  // --- Proxies: remove the ones found dead ---
+  if (pathname === '/api/proxies/remove-dead' && method === 'POST') {
+    const before = loadedProxies.length;
+    loadedProxies = loadedProxies.filter((p) => p.status !== 'dead');
+    sendJSON(res, 200, { success: true, removed: before - loadedProxies.length, total: loadedProxies.length, stats: proxyStats() });
     return;
   }
 

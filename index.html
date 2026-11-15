@@ -45,6 +45,26 @@ body{font-family:var(--font);background:var(--bg);color:var(--t1);display:flex;h
 .mcp-block-h .btn{padding:5px 11px;font-size:11.5px;flex-shrink:0;}
 .mcp-docs{color:var(--pl);text-decoration:none;font-weight:600;}
 .mcp-skill-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+/* grid children may shrink below their content, so long addresses are cut with "…" instead of squeezing the other column */
+.g2>*,.gcol{min-width:0;}
+.px-note{font-size:12px;color:var(--t2);line-height:1.55;margin:10px 0 0;}.px-note.bad{color:var(--red);}.px-note:empty{display:none;}
+.px-opts{margin-top:14px;border-top:1px solid var(--bdr);padding-top:12px;}.px-opts summary{cursor:pointer;font-size:12.5px;color:var(--t2);font-weight:600;}
+.px-opts-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0 6px;}.px-opts-grid .f{margin-bottom:0;}
+.px-check{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--t2);margin-top:8px;cursor:pointer;}.px-check input{accent-color:var(--p);width:15px;height:15px;}
+.px-src{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--bdr);}.px-src:last-child{border-bottom:none;}
+.px-src-main{flex:1;min-width:0;}.px-src-name{font-size:12.5px;font-weight:600;color:var(--t1);}.px-src-url{font-family:var(--mono);font-size:10.5px;color:var(--t3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
+.px-src-res{font-size:11px;color:var(--t3);text-align:right;max-width:38%;}.px-src-res.bad{color:var(--red);}
+.px-src-del{background:none;border:none;color:var(--t3);cursor:pointer;font-size:13px;padding:4px 6px;border-radius:6px;}.px-src-del:hover{color:var(--red);background:var(--reddim);}
+.px-src-count{font-size:11.5px;color:var(--t3);}
+.px-add{margin-top:14px;padding-top:14px;border-top:1px solid var(--bdr);}.px-add-row{display:grid;grid-template-columns:1fr 150px auto;gap:8px;}
+.px-progress{padding:12px 16px;border-bottom:1px solid var(--bdr);}.px-bar{height:8px;background:var(--inp);border-radius:6px;overflow:hidden;}.px-bar-fill{height:100%;width:0;background:var(--p);transition:width .3s;}
+.px-prog-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;font-size:12px;color:var(--t2);}
+.px-summary{padding:0 16px;margin:10px 0 0;}
+.px-filters{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid var(--bdr);}
+.px-chip{display:inline-flex;gap:5px;align-items:center;padding:4px 11px;border-radius:14px;font-size:11.5px;font-weight:600;background:var(--inp);color:var(--t2);border:1px solid var(--bdr);cursor:pointer;font-family:var(--font);}.px-chip b{color:var(--t1);}.px-chip.active{background:var(--p);border-color:var(--p);color:#fff;}.px-chip.active b{color:#fff;}
+.px-search{flex:1;min-width:120px;max-width:200px;padding:5px 10px!important;font-size:12px!important;}.px-sort{width:130px;padding:5px 10px!important;font-size:12px!important;}
+.px-pager{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-top:1px solid var(--bdr);font-size:12px;color:var(--t2);}
+@media(max-width:900px){.px-opts-grid{grid-template-columns:1fr;}.px-add-row{grid-template-columns:1fr;}}
 .mcp-skill-bar .btn svg{width:14px;height:14px;}
 .mcp-detect{margin-bottom:12px;}
 .mcp-chip{display:inline-flex;gap:5px;align-items:center;padding:3px 10px;border-radius:12px;font-size:11.5px;font-weight:600;background:var(--card2);color:var(--t3);}
@@ -232,17 +252,61 @@ body{font-family:var(--font);background:var(--bg);color:var(--t1);display:flex;h
       <div class="scard"><div class="scard-val" style="color:var(--ylw)" id="px-speed">—</div><div class="scard-lbl" data-i18n="avg_speed">Avg Speed (ms)</div></div>
     </div>
     <div class="g2">
+      <div class="gcol">
       <div class="card" style="margin-bottom:0">
         <div class="ch"><div class="ci p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><span class="ct" data-i18n="import_proxies">Import Proxies</span></div>
         <div class="cb">
           <div class="f"><label class="fl" data-i18n="paste_proxy_list">Paste Proxy List</label><textarea id="px-input" rows="8" style="font-family:var(--mono);font-size:12px" placeholder="Format: IP:PORT&#10;Or: IP:PORT:USER:PASS&#10;One per line" data-i18n-ph="ph_proxy_fmt"></textarea></div>
           <div class="f"><label class="fl" data-i18n="proxy_type">Proxy Type</label><select id="px-type"><option data-i18n="opt_http">HTTP</option><option data-i18n="opt_https">HTTPS</option><option data-i18n="opt_socks4">SOCKS4</option><option data-i18n="opt_socks5">SOCKS5</option></select></div>
-          <div style="display:flex;gap:8px"><button class="btn btn-p" onclick="loadProxies()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg><span data-i18n="load_proxies">Load Proxies</span></button><button class="btn btn-g" onclick="scrapeProxies()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span data-i18n="scrape_proxies">Scrape Proxies</span></button><button class="btn btn-o" onclick="validateAllPx()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="validate_all">Validate All</span></button><button class="btn btn-danger" onclick="clearProxies()" style="margin-left:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg><span data-i18n="clear">Clear</span></button></div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-p" onclick="loadProxies()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg><span data-i18n="load_proxies">Load Proxies</span></button><button class="btn btn-g" id="pxScrapeBtn" onclick="scrapeProxies()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span id="pxScrapeLbl" data-i18n="scrape_proxies">Scrape Proxies</span></button><button class="btn btn-o" id="pxValidateBtn" onclick="validateAllPx()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="validate_all">Validate All</span></button><button class="btn btn-danger" onclick="clearProxies()" style="margin-left:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg><span data-i18n="clear">Clear</span></button></div>
+          <details class="px-opts" id="pxOpts">
+            <summary data-i18n="px_opts">Checking options</summary>
+            <div class="px-note" style="margin-top:8px" data-i18n="px_opts_hint">Many proxies are checked at the same time, so even thousands take about a minute. A proxy only counts as working if it really passes traffic through to a test server.</div>
+            <div class="px-opts-grid">
+              <div class="f"><label class="fl" data-i18n="px_opt_conc">Checked at the same time</label><input type="number" id="pxConc" min="1" max="500" value="500" onchange="pxSaveOpts()"></div>
+              <div class="f"><label class="fl" data-i18n="px_opt_timeout">Give up after (seconds)</label><input type="number" id="pxTimeout" min="1" max="30" value="5" onchange="pxSaveOpts()"></div>
+              <div class="f"><label class="fl" data-i18n="px_opt_stop">Stop after this many work</label><input type="number" id="pxStop" min="1" placeholder="all" data-i18n-ph="px_opt_stop_ph" onchange="pxSaveOpts()"></div>
+            </div>
+            <label class="px-check"><input type="checkbox" id="pxOnlyNew" onchange="pxSaveOpts()"><span data-i18n="px_opt_only_new">Only check proxies that were not checked yet</span></label>
+            <label class="px-check"><input type="checkbox" id="pxRemoveDead" checked onchange="pxSaveOpts()"><span data-i18n="px_opt_remove">Remove dead proxies when finished</span></label>
+          </details>
         </div>
       </div>
+      <div class="card" id="pxSourcesCard" style="margin-bottom:0">
+        <div class="ch"><div class="ci g"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg></div><span class="ct" data-i18n="px_sources_title">Proxy sources</span><span class="px-src-count" id="pxSrcCount" style="margin-left:auto"></span></div>
+        <div class="cb">
+          <div class="px-note" style="margin-top:0" data-i18n="px_sources_desc">"Scrape Proxies" downloads the lists switched on below, all at once. The built-in ones are the lists TrafficDrive has always used; add your own to use more.</div>
+          <div id="pxSources"></div>
+          <div class="px-add">
+            <div class="f"><label class="fl" data-i18n="px_src_label">Add a source: the web address of a proxy list</label><input type="url" id="pxSrcUrl" placeholder="https://example.com/proxies.txt" onkeydown="if(event.key==='Enter')pxAddSource()"></div>
+            <div class="px-add-row">
+              <input type="text" id="pxSrcName" maxlength="60" placeholder="Name (optional)" data-i18n-ph="px_src_name_ph">
+              <select id="pxSrcType"><option value="auto" data-i18n="px_src_type_auto">Detect automatically</option><option value="http">HTTP</option><option value="https">HTTPS</option><option value="socks4">SOCKS4</option><option value="socks5">SOCKS5</option></select>
+              <button class="btn btn-p" onclick="pxAddSource()"><span data-i18n="px_src_add">Add</span></button>
+            </div>
+            <div class="px-note" id="pxSrcMsg"></div>
+          </div>
+        </div>
+      </div>
+      </div>
       <div class="card" style="margin-bottom:0">
-        <div class="ch"><div class="ci b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div><span class="ct" data-i18n="proxy_status">Proxy Status</span></div>
+        <div class="ch"><div class="ci b"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg></div><span class="ct" data-i18n="proxy_status">Proxy Status</span>
+          <button class="btn btn-o" id="pxRemoveDeadBtn" onclick="pxRemoveDead()" style="margin-left:auto;padding:5px 11px;font-size:11.5px" disabled><span data-i18n="px_remove_dead">Remove dead</span></button></div>
+        <div class="px-progress" id="pxProgress" style="display:none">
+          <div class="px-bar"><div class="px-bar-fill" id="pxBarFill"></div></div>
+          <div class="px-prog-row"><span id="pxProgText"></span><button class="btn btn-danger" onclick="pxStop()" style="padding:5px 12px;font-size:11.5px"><span data-i18n="px_stop">Stop</span></button></div>
+        </div>
+        <div class="px-note px-summary" id="pxSummary"></div>
+        <div class="px-filters">
+          <button class="px-chip active" id="pxChip-all" onclick="pxSetStatus('all')"><span data-i18n="px_filter_all">All</span> <b>0</b></button>
+          <button class="px-chip" id="pxChip-working" onclick="pxSetStatus('working')"><span data-i18n="px_status_working">Working</span> <b>0</b></button>
+          <button class="px-chip" id="pxChip-dead" onclick="pxSetStatus('dead')"><span data-i18n="px_status_dead">Dead</span> <b>0</b></button>
+          <button class="px-chip" id="pxChip-unchecked" onclick="pxSetStatus('unchecked')"><span data-i18n="px_status_unchecked">Not checked</span> <b>0</b></button>
+          <input type="text" id="pxSearch" class="px-search" placeholder="Search address…" data-i18n-ph="px_search_ph" oninput="pxSearch(this.value)">
+          <select id="pxSort" class="px-sort" onchange="pxSetSort(this.value)"><option value="added" data-i18n="px_sort_added">Order added</option><option value="speed" data-i18n="px_sort_speed">Fastest first</option></select>
+        </div>
         <div class="cb" style="padding:0"><div class="px-scroll"><table class="ptable"><thead><tr><th data-i18n="th_proxy">Proxy</th><th data-i18n="th_type">Type</th><th data-i18n="th_speed">Speed</th><th data-i18n="th_status">Status</th></tr></thead><tbody id="px-table"><tr><td colspan="4" style="text-align:center;color:var(--t3);padding:24px" data-i18n="no_proxies">No proxies loaded yet</td></tr></tbody></table></div></div>
+        <div class="px-pager"><span id="pxPageInfo"></span><span style="display:flex;gap:6px"><button class="btn btn-o" id="pxPrev" onclick="pxPage(-1)" style="padding:5px 11px;font-size:11.5px" disabled><span data-i18n="px_prev">Previous</span></button><button class="btn btn-o" id="pxNext" onclick="pxPage(1)" style="padding:5px 11px;font-size:11.5px" disabled><span data-i18n="px_next">Next</span></button></span></div>
       </div>
     </div>
   </div></div>
@@ -1039,7 +1103,7 @@ setInterval(tick,1000);tick();
 
 const pageMeta={dashboard:{title:'Dashboard',sub:'Automate website traffic with smart controls'},campaigns:{title:'Campaigns',sub:'Manage and monitor all your traffic campaigns'},proxies:{title:'Proxies',sub:'Import, validate and manage your proxy pool'},logs:{title:'Logs',sub:'Full activity log with filtering and export'},settings:{title:'Settings',sub:'Configure application behavior and preferences'},automation:{title:'Scroll System',sub:'Human-like scrolling automation with cruise control'},resolutions:{title:'Screen Resolutions',sub:'Change browser window resolution for different screen sizes'},useragents:{title:'User Agents',sub:'Select and rotate user agents for desktop and mobile browsers'},privacy:{title:'Privacy',sub:'Anti-detection, fingerprint protection & spoofing controls'},browsers:{title:'Browser Library',sub:'All supported browsers with real logos and engine details'},rpa:{title:'RPA Automation',sub:'Record, replay, edit & automate browser actions'},schedule:{title:'Schedule',sub:'Schedule automation tasks with timers and weekly recurring plans'},help:{title:'Help & Support',sub:'Documentation, FAQ, and contact support'},mcp:{title:'AI Assistant',sub:'Let Claude and other MCP assistants control this app'}};
 function toggleSb(){document.querySelector('.sb').classList.toggle('open');document.querySelector('.sb-overlay').classList.toggle('open');}
-function goPage(id,el){try{document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));document.getElementById('pg-'+id).classList.add('active');el.classList.add('active');const meta=pageMeta[id]||{title:id,sub:''};document.getElementById('pageTitle').textContent=meta.title;document.getElementById('pageSub').textContent=meta.sub;if(id==='mcp'){loadMcpInfo();refreshMcpCampaigns();detectMcpAssistants(false);}if(window.innerWidth<=768){document.querySelector('.sb').classList.remove('open');document.querySelector('.sb-overlay').classList.remove('open');}}catch(err){console.error('[goPage] ERROR:',err.message);}}
+function goPage(id,el){try{document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.ni').forEach(n=>n.classList.remove('active'));document.getElementById('pg-'+id).classList.add('active');el.classList.add('active');const meta=pageMeta[id]||{title:id,sub:''};document.getElementById('pageTitle').textContent=meta.title;document.getElementById('pageSub').textContent=meta.sub;if(id==='proxies'){pxOpen();}if(id==='mcp'){loadMcpInfo();refreshMcpCampaigns();detectMcpAssistants(false);}if(window.innerWidth<=768){document.querySelector('.sb').classList.remove('open');document.querySelector('.sb-overlay').classList.remove('open');}}catch(err){console.error('[goPage] ERROR:',err.message);}}
 
 function updateThreadDisplay(){const threads=document.getElementById('numThreads').value;addLog('info',t('thread_count_updated')+': '+threads);}
 function tog(el){el.classList.toggle('on');}
@@ -1096,7 +1160,6 @@ function saveEngines(){const enabledEngines=Object.keys(searchEngines).filter(id
 function updateEngineCount(){const count=Object.keys(searchEngines).length;document.getElementById('engineCount').textContent=count;}
 
 function cntProxy(){return 0;}
-function validateProxy(){const n=parseInt(document.getElementById('proxyNum')?.textContent)||0;if(!n){addLog('error',t('no_proxies_validate'));return;}addLog('info',t('validating_proxies'));setTimeout(()=>{addLog('success',t('validation_done'))},1400);}
 function selStab(i){document.querySelectorAll('.stab').forEach((t,j)=>t.classList.toggle('active',j===i));document.querySelectorAll('.stab-content').forEach((c,j)=>c.classList.toggle('active',j===i));}
 
 let sessionCount=0,visitCount=0,isRunning=false,isPaused=false,statusTimer=null,uptimeSec=0,upTimer=null;let logStats={total:0,ok:0,err:0,warn:0};
@@ -1139,7 +1202,7 @@ function toggleAutoLoop(enabled){
 }
 
 function getDelayData(){const mn=parseFloat(document.getElementById('delayMin')?.value);const mx=parseFloat(document.getElementById('delayMax')?.value);return{delayMin:isNaN(mn)?0:Math.max(0,mn),delayMax:isNaN(mx)?0:Math.max(0,mx)};}
-async function fetchLoadedProxies(){try{const r=await apiFetch('http://localhost:3000/api/proxies');const data=await r.json();return (data&&data.success&&Array.isArray(data.proxies))?data.proxies:[];}catch(e){return [];}}
+async function fetchLoadedProxies(){try{const r=await apiFetch('http://localhost:3000/api/proxies?usable=1');const data=await r.json();return (data&&data.success&&Array.isArray(data.proxies))?data.proxies:[];}catch(e){return [];}}
 
 function startCamp(){startCampRunner();}
 async function startCampRunner(){const url=document.getElementById('websiteUrl').value.trim();const keywords=document.getElementById('keywords').value.trim();const restaurant=document.getElementById('bizName').value.trim();const bizUrl=document.getElementById('bizUrl').value.trim();const scrollModeEl=document.getElementById('scrollMode');const scrollDirectionEl=document.getElementById('scrollDirection');const scrollDistanceEl=document.getElementById('scrollDistance');const scrollDurationEl=document.getElementById('scrollDuration');const scrollSettings={scrollMode:scrollModeEl?scrollModeEl.value:'natural',scrollDirection:scrollDirectionEl?scrollDirectionEl.value:'down',scrollDistance:scrollDistanceEl?(parseInt(scrollDistanceEl.value)||800):800,scrollDuration:scrollDurationEl?(parseInt(scrollDurationEl.value)||5000):5000};if(!url&&curMode!=='gmaps'){addLog('error',t('enter_website_url'));return;}if(curMode==='organic'&&!keywords){addLog('error',t('enter_keywords_organic'));return;}if(curMode==='gmaps'&&!restaurant){addLog('error',t('enter_biz_name_gmaps'));return;}if(isRunning)return;isRunning=true;isPaused=false;sessionCount=0;visitCount=0;uptimeSec=0;setStatus('run');updateActionButtons('running');enableFormFields(false);addLog('info',t('campaign_started_log')+' → '+(curMode==='gmaps'?restaurant:url));addLog('info',t('mode_label')+': '+curMode+' | '+t('default_sessions')+': '+document.getElementById('numSessions').value);if(autoLoopEnabled){addLog('info',t('auto_loop_on_log'));}if(curMode==='referral'){const refPlatformEl=document.getElementById('refPlatform');const refPlatform=refPlatformEl?refPlatformEl.value:'random';addLog('info',t('ref_platform_log')+': '+refPlatform);}const proxies=await fetchLoadedProxies();if(proxies.length){addLog('success',t('proxies_available_log')+': '+proxies.length);}else{addLog('warn',t('no_proxies_backend'));}
@@ -1167,7 +1230,7 @@ function updateActionButtons(state){const startBtn=document.getElementById('star
 
 function enableFormFields(enable){const fields=['websiteUrl','keywords','numSessions','pagesSession','delayMin','delayMax','maxVisits','numThreads','bizName','bizUrl','primaryEngine','refPlatform','ua','mapsLoadWaitSec','searchResultWaitSec','websiteLoadWaitSec','typingDelayMs','stepRetryAttempts','stepRetryDelaySec'];fields.forEach(id=>{const el=document.getElementById(id);if(el)el.disabled=!enable;});document.querySelectorAll('.mode-card,.mi,.db').forEach(el=>{el.style.pointerEvents=enable?'auto':'none';el.style.opacity=enable?'1':'0.6';});}
 
-function doRefresh(){addLog('info',t('dashboard_refreshed'));}
+function doRefresh(){if(pxPageActive()){pxRefresh();pxLoadSources();}addLog('info',t('dashboard_refreshed'));}
 function clearDashLogs(){document.getElementById('dashLogs').innerHTML='';addLog('info',t('logs_cleared'));}
 function clearAllLogs(){document.getElementById('fullLogs').innerHTML='';document.getElementById('dashLogs').innerHTML='';logStats={total:0,ok:0,err:0,warn:0};document.getElementById('log-total').textContent='0';document.getElementById('log-ok').textContent='0';document.getElementById('log-err').textContent='0';document.getElementById('log-warn').textContent='0';addLog('info',t('all_logs_cleared'));}
 function exportLogs(){const logs=document.getElementById('fullLogs').innerText;const blob=new Blob([logs],{type:'text/plain'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='trafficbot-logs.txt';a.click();addLog('success',t('logs_exported'));}
@@ -1227,60 +1290,179 @@ function getCategoryLogo(category){
   return logos[category]||logos.business;
 }
 
-function loadProxies(){const input=document.getElementById('px-input').value.trim();if(!input){addLog('error',t('no_proxies_load'));return;}const type=(document.getElementById('px-type').value||'HTTP').toLowerCase();const lines=input.split('\n').map(l=>l.trim()).filter(Boolean);const proxies=lines.map(raw=>{const line=raw.trim();let host=null,port=null,username=null,password=null;let cleaned=line;cleaned=cleaned.replace(/^(https?|socks[45]):\/\//i,'');if(cleaned.includes('@')){const [authPart,hostPart]=cleaned.split('@');cleaned=hostPart;const auth=authPart.split(':');username=auth[0]||null;password=auth.slice(1).join(':')||null;}const parts=cleaned.split(':');if(parts.length>=2){host=parts[0];port=parseInt(parts[1],10);}if(parts.length>=4&&!username){host=parts[0];port=parseInt(parts[1],10);username=parts[2]||null;password=parts.slice(3).join(':')||null;}return{type,host,port,username,password,raw:line};});
+// ---- Proxies page: the list lives on the backend; this page shows one page of it ----
+const px={page:0,size:100,status:'all',q:'',sort:'added',filtered:0,stats:null,job:null,poll:null,watching:null,lastTable:0,sources:[],busyScrape:false,opened:false,searchTimer:null,seq:0};
+const PX_OPTS_KEY='pxCheckOptions';
+const pxNum=n=>(Number(n)||0).toLocaleString();
+async function pxGet(path){const r=await apiFetch('http://localhost:3000'+path);const d=await r.json().catch(()=>({}));if(!r.ok||d.success===false){const e=new Error(d.error||('HTTP '+r.status));e.status=r.status;throw e;}return d;}
+async function pxPost(path,body){const r=await apiFetch('http://localhost:3000'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const d=await r.json().catch(()=>({}));if(!r.ok||d.success===false){const e=new Error(d.error||('HTTP '+r.status));e.status=r.status;e.data=d;throw e;}return d;}
+function pxPageActive(){const pg=document.getElementById('pg-proxies');return !!(pg&&pg.classList.contains('active'));}
 
-// Append proxies to the table (don't clear existing ones)
-const tbody=document.getElementById('px-table');
-// Remove the "no proxies" placeholder row if present
-const placeholder=tbody.querySelector('td[colspan]');
-if(placeholder&&placeholder.textContent.includes(t('no_proxies')))tbody.innerHTML='';
-proxies.forEach(p=>{const row=document.createElement('tr');row.innerHTML=`<td>${p.raw}</td><td>${(p.type||'http').toUpperCase()}</td><td>—</td><td><span class="badge check">${t('loaded')}</span></td>`;tbody.appendChild(row);});
+// checking options, remembered between sessions
+function pxOpts(){
+  const num=(id,lo,hi,d)=>{const v=parseInt(document.getElementById(id).value,10);return Number.isFinite(v)?Math.min(hi,Math.max(lo,v)):d;};
+  const stop=parseInt(document.getElementById('pxStop').value,10);
+  return {concurrency:num('pxConc',1,500,500),timeoutSeconds:num('pxTimeout',1,30,5),stopAfterWorking:stop>0?stop:null,onlyUnchecked:document.getElementById('pxOnlyNew').checked,removeDead:document.getElementById('pxRemoveDead').checked};
+}
+function pxSaveOpts(){try{localStorage.setItem(PX_OPTS_KEY,JSON.stringify(pxOpts()));}catch(e){}}
+function pxRestoreOpts(){
+  try{
+    const o=JSON.parse(localStorage.getItem(PX_OPTS_KEY)||'null');if(!o)return;
+    document.getElementById('pxConc').value=o.concurrency||500;document.getElementById('pxTimeout').value=o.timeoutSeconds||5;
+    document.getElementById('pxStop').value=o.stopAfterWorking||'';document.getElementById('pxOnlyNew').checked=!!o.onlyUnchecked;document.getElementById('pxRemoveDead').checked=o.removeDead!==false;
+  }catch(e){}
+}
 
-const currentTotal=tbody.querySelectorAll('tr').length;document.getElementById('px-total').textContent=currentTotal;document.getElementById('px-working').textContent=currentTotal;document.getElementById('px-dead').textContent='0';document.getElementById('px-speed').textContent='—';
+// numbers and filter chips
+function pxRenderStats(){
+  const s=px.stats||{total:0,working:0,dead:0,unchecked:0,avgMs:null};
+  const set=(id,v)=>{const el=document.getElementById(id);if(el)el.textContent=v;};
+  set('px-working',pxNum(s.working));set('px-dead',pxNum(s.dead));set('px-total',pxNum(s.total));set('px-speed',s.avgMs==null?'—':pxNum(s.avgMs));
+  [['all',s.total],['working',s.working],['dead',s.dead],['unchecked',s.unchecked]].forEach(([k,n])=>{const el=document.getElementById('pxChip-'+k);if(el){el.querySelector('b').textContent=pxNum(n);el.classList.toggle('active',px.status===k);}});
+  const rd=document.getElementById('pxRemoveDeadBtn');if(rd)rd.disabled=!s.dead;
+}
 
-apiFetch('http://localhost:3000/api/proxies/load',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({proxies})}).then(r=>r.json()).then(data=>{if(data&&data.success){addLog('success',proxies.length+' '+t('proxies_loaded_saved')+' ('+t('total_loaded')+': '+data.count+')');}else{addLog('warn',t('proxies_local_backend_fail'));}}).catch(()=>{addLog('warn',t('proxies_local_backend_unreachable'));});}
+// one page of the table (every value is escaped: proxy lists come from the internet)
+function pxRenderTable(list){
+  const tb=document.getElementById('px-table');if(!tb)return;
+  const total=(px.stats&&px.stats.total)||0;
+  if(!list.length)tb.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--t3);padding:24px">'+escapeHtml(total?t('px_none_match'):t('no_proxies'))+'</td></tr>';
+  else tb.innerHTML=list.map(p=>{
+    const st=p.status==='working'?['ok',t('px_status_working')]:p.status==='dead'?['dead',t('px_status_dead')]:['check',t('px_status_unchecked')];
+    return '<tr><td>'+escapeHtml(p.host+':'+p.port)+(p.username?' <span class="badge p" title="'+escapeHtml(t('px_has_login'))+'">'+escapeHtml(t('px_login'))+'</span>':'')+'</td><td>'+escapeHtml(String(p.type||'http').toUpperCase())+'</td><td>'+(p.status==='working'&&p.ms!=null?pxNum(p.ms):'—')+'</td><td><span class="badge '+st[0]+'">'+escapeHtml(st[1])+'</span></td></tr>';
+  }).join('');
+  const from=px.filtered?px.page*px.size+1:0,to=Math.min(px.filtered,(px.page+1)*px.size);
+  const info=document.getElementById('pxPageInfo');if(info)info.textContent=pxNum(from)+'–'+pxNum(to)+' '+t('px_of')+' '+pxNum(px.filtered);
+  const prev=document.getElementById('pxPrev'),next=document.getElementById('pxNext');if(prev)prev.disabled=px.page===0;if(next)next.disabled=to>=px.filtered;
+}
+async function pxRefresh(){
+  const seq=++px.seq;
+  const qs=new URLSearchParams({limit:px.size,offset:px.page*px.size,status:px.status,sort:px.sort});if(px.q)qs.set('q',px.q);
+  try{
+    const d=await pxGet('/api/proxies?'+qs);
+    if(seq!==px.seq)return;                                   // a newer request is already on its way
+    px.stats=d.stats;px.filtered=d.filtered;
+    if(px.page>0&&!d.proxies.length&&d.filtered>0){px.page=Math.max(0,Math.ceil(d.filtered/px.size)-1);return pxRefresh();}
+    pxRenderStats();pxRenderTable(d.proxies);
+  }catch(e){
+    const tb=document.getElementById('px-table');if(tb)tb.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--red);padding:24px">'+escapeHtml(t('proxies_local_backend_unreachable')+' ('+e.message+')')+'</td></tr>';
+  }
+}
+function pxSetStatus(s){px.status=s;px.page=0;pxRefresh();}
+function pxSetSort(v){px.sort=v;px.page=0;pxRefresh();}
+function pxSearch(v){clearTimeout(px.searchTimer);px.searchTimer=setTimeout(()=>{px.q=String(v).trim();px.page=0;pxRefresh();},250);}
+function pxPage(d){const max=Math.max(0,Math.ceil(px.filtered/px.size)-1);px.page=Math.min(max,Math.max(0,px.page+d));pxRefresh();}
 
-function validateAllPx(){addLog('info',t('validating_all_proxies'));const tbody=document.getElementById('px-table');const rows=[...tbody.querySelectorAll('tr')];rows.forEach(row=>{if(row.children&&row.children[2]&&row.children[3]){row.children[2].textContent='—';row.children[3].innerHTML='<span class="badge">'+t('checking')+'</span>';}});apiFetch('http://localhost:3000/api/proxies/validate',{method:'POST',headers:{'Content-Type':'application/json'}}).then(r=>r.json()).then(async data=>{if(!(data&&data.success&&Array.isArray(data.results))){addLog('error',t('proxy_validation_failed'));return;}const results=data.results;let working=0,dead=0,sumMs=0,countMs=0;for(let i=0;i<rows.length;i++){const row=rows[i];const r=results[i];if(!row||!r)continue;const speedCell=row.children[2];const statusCell=row.children[3];if(r.ok){working++;statusCell.innerHTML='<span class="badge ok">'+t('successful')+'</span>';}else{dead++;statusCell.innerHTML='<span class="badge dead">'+t('failed')+'</span>';}if(typeof r.ms==='number'){speedCell.textContent=`${r.ms}`;sumMs+=r.ms;countMs++;}else{speedCell.textContent='—';}document.getElementById('px-working').textContent=working;document.getElementById('px-dead').textContent=dead;document.getElementById('px-total').textContent=results.length;document.getElementById('px-speed').textContent=countMs?Math.round(sumMs/countMs):'—';await new Promise(res=>setTimeout(res,150));}addLog('success',t('validation_complete')+': '+t('successful')+' '+working+', '+t('failed')+' '+dead);}).catch(err=>{addLog('error',t('proxy_validation_api_failed')+': '+err.message);});}
-function clearProxies(){document.getElementById('px-input').value='';document.getElementById('px-table').innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--t3);padding:24px">'+t('no_proxies')+'</td></tr>';document.getElementById('px-working').textContent='0';document.getElementById('px-dead').textContent='0';document.getElementById('px-total').textContent='0';document.getElementById('px-speed').textContent='—';apiFetch('http://localhost:3000/api/proxies/clear',{method:'POST',headers:{'Content-Type':'application/json'}}).catch(()=>{});addLog('info',t('proxies_cleared'));}
+// load pasted proxies: the backend parses them (socks5://… keeps its own type) and reports what it did
+async function loadProxies(){
+  const ta=document.getElementById('px-input'),text=ta.value.trim();
+  if(!text){addLog('error',t('no_proxies_load'));return;}
+  const type=(document.getElementById('px-type').value||'HTTP').toLowerCase();
+  try{
+    const d=await pxPost('/api/proxies/load',{text,type});ta.value='';
+    addLog(d.invalid?'warn':'success',pxNum(d.added)+' '+t('px_added')+(d.duplicates?' · '+pxNum(d.duplicates)+' '+t('px_duplicates'):'')+(d.invalid?' · '+pxNum(d.invalid)+' '+t('px_invalid'):'')+' ('+t('total_loaded')+': '+pxNum(d.count)+')');
+    px.page=0;await pxRefresh();
+  }catch(e){addLog('warn',t('proxies_local_backend_unreachable')+': '+e.message);}
+}
 
-// Scrape free proxies from public sources (HTTP, HTTPS, SOCKS4, SOCKS5)
-// and append them to the proxy table + server-side store.
-function scrapeProxies(){
+// check the list: runs on the backend, this page just watches the progress
+function pxRenderProgress(){
+  const j=px.job,box=document.getElementById('pxProgress'),run=!!(j&&j.status==='running');
+  if(box)box.style.display=run?'':'none';
+  const vb=document.getElementById('pxValidateBtn');if(vb)vb.disabled=run;
+  if(!run)return;
+  document.getElementById('pxBarFill').style.width=(j.total?Math.round(j.done/j.total*100):0)+'%';
+  document.getElementById('pxProgText').textContent=pxNum(j.done)+' / '+pxNum(j.total)+' '+t('px_checked')+' · '+pxNum(j.working)+' '+t('px_status_working').toLowerCase()+' · '+pxNum(j.dead)+' '+t('px_status_dead').toLowerCase()+' · '+Math.round(j.elapsedMs/1000)+' s';
+}
+function pxSummarize(j){
+  const el=document.getElementById('pxSummary');if(!el)return;
+  if(j.status==='error'){el.className='px-note px-summary bad';el.textContent=j.error;addLog('error',j.error);return;}
+  let msg=pxNum(j.done)+' '+t('px_checked')+' · '+Math.max(1,Math.round(j.elapsedMs/1000))+' s: '+pxNum(j.working)+' '+t('px_status_working').toLowerCase()+', '+pxNum(j.dead)+' '+t('px_status_dead').toLowerCase();
+  if(j.removed)msg+=' — '+pxNum(j.removed)+' '+t('px_removed');
+  if(j.stoppedEarly)msg+=' ('+t('px_stopped_early')+')';
+  if(j.status==='cancelled')msg=t('px_cancelled')+': '+msg;
+  el.className='px-note px-summary';el.textContent=msg;addLog(j.status==='cancelled'?'warn':'success',msg);
+}
+function pxStartPoll(){if(!px.poll)px.poll=setInterval(pxPoll,700);pxPoll();}
+async function pxPoll(){
+  let d;try{d=await pxGet('/api/proxies/validate/status');}catch(e){return;}
+  const j=d.job;px.job=j;px.stats=d.stats;pxRenderProgress();
+  if(j&&j.status==='running'){
+    px.watching=j.id;
+    if(Date.now()-px.lastTable>2000){px.lastTable=Date.now();if(pxPageActive())pxRefresh();else pxRenderStats();}else pxRenderStats();
+    return;
+  }
+  if(px.poll){clearInterval(px.poll);px.poll=null;}
+  await pxRefresh();
+  if(j&&px.watching===j.id){px.watching=null;pxSummarize(j);}
+}
+async function validateAllPx(){
+  if(!(px.stats&&px.stats.total)){addLog('error',t('no_proxies_validate'));return;}
+  const sum=document.getElementById('pxSummary');sum.textContent='';sum.className='px-note px-summary';
+  pxSaveOpts();
+  try{
+    const d=await pxPost('/api/proxies/validate/start',pxOpts());
+    px.job=d.job;px.watching=d.job.id;addLog('info',t('validating_all_proxies'));pxRenderProgress();pxStartPoll();
+  }catch(e){
+    if(e.status===409){px.watching=e.data&&e.data.job?e.data.job.id:null;pxStartPoll();return;}   // already running: just watch it
+    sum.className='px-note px-summary bad';sum.textContent=e.message;addLog('error',e.message);
+  }
+}
+async function pxStop(){try{await pxPost('/api/proxies/validate/cancel',{});}catch(e){addLog('error',e.message);}pxPoll();}
+async function pxRemoveDead(){try{const d=await pxPost('/api/proxies/remove-dead',{});addLog('success',pxNum(d.removed)+' '+t('px_removed'));await pxRefresh();}catch(e){addLog('error',e.message);}}
+async function clearProxies(){
+  try{await pxPost('/api/proxies/clear',{});}catch(e){addLog('warn',t('proxies_local_backend_unreachable'));}
+  document.getElementById('px-input').value='';px.page=0;document.getElementById('pxSummary').textContent='';
+  await pxRefresh();addLog('info',t('proxies_cleared'));
+}
+
+// scrape: every source that is switched on is downloaded at once
+async function scrapeProxies(){
+  if(px.busyScrape)return;px.busyScrape=true;
+  const btn=document.getElementById('pxScrapeBtn'),lbl=document.getElementById('pxScrapeLbl');btn.disabled=true;lbl.textContent=t('px_scraping');
   addLog('info',t('scraping_proxies'));
-  const btn=event&&event.target?event.target.closest('button'):null;
-  if(btn){btn.disabled=true;btn.style.opacity='0.6';}
-  apiFetch('http://localhost:3000/api/proxies/scrape',{method:'POST',headers:{'Content-Type':'application/json'}})
-    .then(r=>r.json())
-    .then(data=>{
-      if(btn){btn.disabled=false;btn.style.opacity='';}
-      if(!data||!data.success){addLog('error',t('scrape_failed')+(data&&data.error?': '+data.error:''));return;}
-      const scraped=data.proxies||[];
-      if(scraped.length===0){addLog('warn',t('scrape_no_proxies'));return;}
-      // Append scraped proxies to the table
-      const tbody=document.getElementById('px-table');
-      const placeholder=tbody.querySelector('td[colspan]');
-      if(placeholder&&placeholder.textContent.includes(t('no_proxies')))tbody.innerHTML='';
-      // Group by type for display
-      const typeCounts={};
-      scraped.forEach(p=>{
-        const typeKey=(p.type||'http').toUpperCase();
-        typeCounts[typeKey]=(typeCounts[typeKey]||0)+1;
-        const row=document.createElement('tr');
-        row.innerHTML=`<td>${p.raw}</td><td>${typeKey}</td><td>—</td><td><span class="badge check">${t('loaded')}</span></td>`;
-        tbody.appendChild(row);
-      });
-      const currentTotal=tbody.querySelectorAll('tr').length;
-      document.getElementById('px-total').textContent=currentTotal;
-      document.getElementById('px-working').textContent=currentTotal;
-      document.getElementById('px-dead').textContent='0';
-      document.getElementById('px-speed').textContent='—';
-      const typeSummary=Object.entries(typeCounts).map(([k,v])=>`${k}:${v}`).join(', ');
-      addLog('success',t('scraped_proxies')+': '+data.scraped+' ('+typeSummary+') — '+data.added+' '+t('added_to_list'));
-    })
-    .catch(err=>{
-      if(btn){btn.disabled=false;btn.style.opacity='';}
-      addLog('error',t('scrape_failed')+': '+err.message);
-    });
+  try{
+    const d=await pxPost('/api/proxies/scrape',{});
+    const good=d.results.filter(r=>r.ok&&!r.error).length;
+    addLog(d.scraped?'success':'warn',t('scraped_proxies')+': '+pxNum(d.scraped)+' — '+pxNum(d.added)+' '+t('added_to_list')+' ('+good+'/'+d.results.length+' '+t('px_sources_ok')+')');
+    d.results.filter(r=>!r.ok||r.error).forEach(r=>addLog('warn',r.name+': '+r.error));
+    px.page=0;await Promise.all([pxRefresh(),pxLoadSources()]);
+  }catch(e){addLog('error',t('scrape_failed')+': '+e.message);}
+  btn.disabled=false;lbl.textContent=t('scrape_proxies');px.busyScrape=false;
+}
+
+// the list of sources the scraper uses
+async function pxLoadSources(){try{const d=await pxGet('/api/proxies/sources');px.sources=d.sources;pxRenderSources();}catch(e){}}
+function pxRenderSources(){
+  const box=document.getElementById('pxSources');if(!box)return;
+  const on=px.sources.filter(s=>s.enabled).length;
+  document.getElementById('pxSrcCount').textContent=on+'/'+px.sources.length+' '+t('px_src_on');
+  box.innerHTML=px.sources.map(s=>{
+    const lr=s.lastRun;
+    const res=!lr?escapeHtml(t('px_src_unused')):(lr.ok?escapeHtml(pxNum(lr.count)+' '+t('px_src_found')+' · '+(lr.ms/1000).toFixed(1)+' s'):'✕ '+escapeHtml(lr.error||t('failed')));
+    return '<div class="px-src"><div class="tog'+(s.enabled?' on':'')+'" data-id="'+escapeHtml(s.id)+'" onclick="pxToggleSource(this.dataset.id)" title="'+escapeHtml(t('px_src_toggle'))+'"><div class="tog-k"></div></div>'
+      +'<div class="px-src-main"><div class="px-src-name">'+escapeHtml(s.name)+' <span class="badge p">'+escapeHtml(String(s.type).toUpperCase())+'</span></div><div class="px-src-url" title="'+escapeHtml(s.url)+'">'+escapeHtml(s.url)+'</div></div>'
+      +'<div class="px-src-res'+(lr&&!lr.ok?' bad':'')+'">'+res+'</div>'
+      +(s.builtin?'':'<button class="px-src-del" data-id="'+escapeHtml(s.id)+'" onclick="pxDeleteSource(this.dataset.id)" title="'+escapeHtml(t('px_src_remove'))+'">✕</button>')+'</div>';
+  }).join('');
+}
+async function pxToggleSource(id){const s=px.sources.find(x=>x.id===id);if(!s)return;try{const d=await pxPost('/api/proxies/sources/update',{id,enabled:!s.enabled});px.sources=d.sources;pxRenderSources();}catch(e){addLog('error',e.message);}}
+async function pxDeleteSource(id){try{const d=await pxPost('/api/proxies/sources/delete',{id});px.sources=d.sources;pxRenderSources();}catch(e){addLog('error',e.message);}}
+async function pxAddSource(){
+  const url=document.getElementById('pxSrcUrl'),name=document.getElementById('pxSrcName'),type=document.getElementById('pxSrcType'),msg=document.getElementById('pxSrcMsg');
+  msg.className='px-note';msg.textContent='';
+  if(!url.value.trim()){msg.className='px-note bad';msg.textContent=t('px_src_need_url');return;}
+  try{
+    const d=await pxPost('/api/proxies/sources',{url:url.value.trim(),name:name.value.trim(),type:type.value});
+    px.sources=d.sources;pxRenderSources();url.value='';name.value='';msg.textContent=t('px_src_added');addLog('success',t('px_src_added')+': '+d.source.name);
+  }catch(e){msg.className='px-note bad';msg.textContent=e.message;}
+}
+
+// opening the page: show what the backend holds (it may have changed — an AI assistant can load proxies too)
+function pxOpen(){
+  if(!px.opened){px.opened=true;pxRestoreOpts();}
+  pxRefresh();pxLoadSources();
+  pxGet('/api/proxies/validate/status').then(d=>{px.job=d.job;pxRenderProgress();if(d.job&&d.job.status==='running'){px.watching=d.job.id;pxStartPoll();}}).catch(()=>{});
 }
 
 function saveSettings(){const lang=document.getElementById('appLanguage').value;changeLanguage(lang);const browserEngine=document.getElementById('browserEngineSelect').value;const customPath=document.getElementById('customBrowserPath').value;localStorage.setItem('browserEngine',browserEngine);localStorage.setItem('customBrowserPath',customPath);addLog('success',t('settings_saved'));showSettingsPopup();}

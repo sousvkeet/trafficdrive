@@ -73,6 +73,7 @@ Start small (1–3 sessions) before large runs. Campaigns are listed by list_cam
 Privacy: use privacyProfile ("balanced" / "stealth") or explicit privacyFeatures; list_privacy_features explains each one.
 Schedules created with create_schedule run inside the backend; the app must be running at that time.
 Saved campaigns (save_campaign / run_saved_campaign) are shared with the dashboard's Campaigns page. list_user_agents, list_resolutions and list_browser_catalog expose the app's built-in libraries. rpa_* tools record and replay browser sessions, and a replay can be scheduled (mode "rpa").
+scrape_free_proxies downloads from the sources switched on in the app (list_proxy_sources); validate_proxies tests many proxies at once and, unless removeDead=false, removes the dead ones. Only the user can add proxy sources, in the app.
 Proxy credentials are never returned by any tool. customBrowserPath only accepts browsers shown by list_browsers.`;
 
 async function main() {

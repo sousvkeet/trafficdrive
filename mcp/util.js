@@ -47,64 +47,12 @@ const sleep = (ms, signal) => new Promise((resolve) => {
 });
 
 // ── proxies ───────────────────────────────────────────────────────────────────
-const SCHEMES = ['http', 'https', 'socks4', 'socks5'];
-
-function validHost(h) {
-  return /^\d{1,3}(\.\d{1,3}){3}$/.test(h) || /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/i.test(h) || /^\[[0-9a-f:]+\]$/i.test(h);
-}
-
-// "host:port" or "[v6]:port" → [host, port] (or null if it is not exactly that).
-function splitHostPort(hp) {
-  const v6 = hp.match(/^(\[[0-9a-f:]+\]):(\d+)$/i);
-  if (v6) return [v6[1], v6[2]];
-  const parts = hp.split(':');
-  return parts.length === 2 ? parts : null;
-}
-
-// Accepts: host:port | host:port:user:pass | user:pass@host:port |
-//          scheme://host:port | scheme://user:pass@host:port   ([v6]:port too)
-// Returns { proxy } or { error }.
-function parseProxyLine(line, defaultType = 'http') {
-  let s = String(line || '').trim();
-  if (!s) return { error: 'empty line' };
-  let type = defaultType;
-  const m = s.match(/^([a-z][a-z0-9]*):\/\/(.+)$/i);
-  if (m) {
-    type = m[1].toLowerCase();
-    s = m[2];
-    if (!SCHEMES.includes(type)) return { error: `unsupported scheme "${m[1]}" (use ${SCHEMES.join(', ')})` };
-  }
-  let hostPort = null, username = null, password = null;
-  // user:pass@host:port — the LAST "@" separates credentials (passwords may contain "@")…
-  const at = s.lastIndexOf('@');
-  if (at > 0 && (hostPort = splitHostPort(s.slice(at + 1)))) {
-    const cred = s.slice(0, at);
-    const ci = cred.indexOf(':');
-    username = ci >= 0 ? cred.slice(0, ci) : cred;
-    password = ci >= 0 ? cred.slice(ci + 1) : '';
-  } else {
-    // …otherwise host:port or host:port:user:pass (an "@" here belongs to the password).
-    hostPort = splitHostPort(s);
-    if (!hostPort) {
-      const parts = s.split(':');
-      if (parts.length >= 4) {
-        hostPort = [parts[0], parts[1]];
-        username = parts[2];
-        password = parts.slice(3).join(':');
-      }
-    }
-  }
-  if (!hostPort) return { error: 'expected host:port, host:port:user:pass, user:pass@host:port or scheme://…' };
-  const [host, port] = hostPort;
-  const portNum = parseInt(port, 10);
-  if (!host || !validHost(host)) return { error: `invalid host "${host}"` };
-  if (!(portNum >= 1 && portNum <= 65535) || String(portNum) !== String(port).trim()) return { error: `invalid port "${port}"` };
-  return { proxy: { type, host, port: portNum, username: username || null, password: password || null, raw: `${host}:${portNum}` } };
-}
+// Parsing lives in ProxyTools.js so the app and the MCP server accept exactly the same formats.
+const { SCHEMES, parseProxyLine } = require('../ProxyTools.js');
 
 // Never hand credentials back to the model.
 function maskProxy(p) {
-  return { type: p.type, host: p.host, port: p.port, auth: p.username ? `${p.username}:***` : null };
+  return { type: p.type, host: p.host, port: p.port, auth: p.username ? `${p.username}:***` : null, ...(p.status ? { status: p.status } : {}), ...(typeof p.ms === 'number' && p.status === 'working' ? { ms: p.ms } : {}) };
 }
 
 function proxyKey(p) { return `${p.host}:${p.port}`; }

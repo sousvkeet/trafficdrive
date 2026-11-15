@@ -46,6 +46,8 @@ Only after recipe 1 succeeded and the user approved the numbers.
 {"url": "https://staging.example.com", "sessions": 200, "threads": 5, "visitTimeMs": 20000, "delayMinSeconds": 1, "delayMaxSeconds": 4, "scrollDirection": "random", "internalLinkNavigation": true, "internalLinkCount": 3, "privacyProfile": "balanced"}
 ```
 
+- Need working free proxies quickly? Scrape, then stop checking as soon as there are enough: `scrape_free_proxies`, then `validate_proxies` with `{"stopAfterWorking": 30}`. Both calls take well under a minute.
+
 - Keep `threads` modest at first (3–5). Each thread is a full browser.
 - `delayMinSeconds` / `delayMaxSeconds` pace each thread. They are **seconds**.
 - With proxies loaded and `useLoadedProxies` left at its default of `true`, sessions rotate through the proxies round-robin.
@@ -161,7 +163,7 @@ Updating: pass the `id` to `save_campaign` and only the fields you give change. 
 1. `get_campaign` gives the status, per-session counts, settings and recent logs.
 2. `get_campaign_logs` with `"level": "error"`, then `"warn"`, to find the repeating pattern.
 3. Match the pattern against `troubleshooting.md`.
-4. Check proxies with `list_proxies`; offer `validate_proxies` (it deletes dead ones, so ask).
+4. Check proxies with `list_proxies` (it shows how many are working, dead and not checked yet); offer `validate_proxies` (it removes dead ones by default, so ask).
 5. If it looks fingerprint-related, offer `verify_privacy` with the same settings.
 6. Report the most likely cause with the log lines as evidence, and give specific changes to try. Don't stop or restart the campaign unless the user asks.
 
