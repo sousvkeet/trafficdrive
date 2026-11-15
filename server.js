@@ -456,9 +456,9 @@ function scheduleRequest(sched) {
   return req;
 }
 
-function runSchedule(sched, reason) {
+async function runSchedule(sched, reason) {
   const req = scheduleRequest(sched);
-  const proc = startCampaign(String(req.mode || ''), req, 'schedule');
+  const proc = await startCampaignVerified(String(req.mode || ''), req, 'schedule');
   sched.lastRunAt = Date.now();
   sched.lastProcessId = proc.id;
   sched.runCount = (sched.runCount || 0) + 1;
@@ -481,7 +481,11 @@ function schedulerTick() {
     }
     try {
       if (sched.type === 'recurring' && overdue > MISSED_GRACE_MS) sched.lastError = 'Skipped one missed run (app was not running)';
-      else runSchedule(sched, sched.type === 'recurring' ? 'recurring' : 'scheduled');
+      else {
+        // starting may take a moment (the proxies are checked first), so the tick does not wait for it
+        runSchedule(sched, sched.type === 'recurring' ? 'recurring' : 'scheduled')
+          .then(() => persistSchedules(), (e) => { sched.lastError = e.message; persistSchedules(); });
+      }
     } catch (e) {
       sched.lastError = e.message;
     }
@@ -593,10 +597,40 @@ function validationOptions(body) {
   };
 }
 
+// What each proxy did the last time it was asked to open a site, kept for a while so that starting several campaigns
+// to the same site does not check the same proxies again. key: "<proxy>|<site>" (site is an origin, or "generic").
+const VERIFY_TTL_MS = 20 * 60 * 1000;
+const verifyCache = new Map();
+const proxyCacheKey = (p) => `${p.type}://${String(p.host).toLowerCase()}:${p.port}`;
+function rememberCheck(p, r, site) {
+  verifyCache.set(proxyCacheKey(p) + '|' + site, { ok: !!r.ok, at: Date.now(), ms: r.ms || 0 });
+  if (verifyCache.size > 200000) { let n = 0; for (const k of verifyCache.keys()) { verifyCache.delete(k); if (++n >= 20000) break; } }
+}
+function cachedCheck(p, site) {
+  const k = proxyCacheKey(p) + '|' + site;
+  const v = verifyCache.get(k);
+  if (!v) return null;
+  if (Date.now() - v.at > VERIFY_TTL_MS) { verifyCache.delete(k); return null; }
+  return v;
+}
+
+// The address a check should open through each proxy. Anything that is not a public web address is refused for an AI
+// assistant, so the checker cannot be used to probe the user's own network.
+function parseTestUrl(raw, fromMcp) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return null;
+  const url = normalizeUrlInput(raw, false, 'Test address');          // 400 for anything that is not an http(s) address
+  if (fromMcp) {
+    try { ProxySources.assertFetchable(url); } catch (e) { throw httpError(400, `${e.message} (assistants may only test public web addresses)`); }
+  }
+  return url;
+}
+
 // Start checking either the proxies given in the request (nothing is removed) or the loaded list.
-function beginValidation(body) {
+function beginValidation(body, { mcp = false } = {}) {
   if (activeValidation && activeValidation.status === 'running') { const e = new Error('A proxy check is already running'); e.status = 409; throw e; }
   const opts = validationOptions(body);
+  opts.testUrl = parseTestUrl(body.testUrl, mcp);
+  opts.onResult = rememberCheck;
   let subject, onLoaded = false;
   if (Array.isArray(body.proxies) && body.proxies.length) {
     subject = body.proxies.map(cleanProxyRecord).filter(Boolean);
@@ -1482,6 +1516,99 @@ function startCampaign(mode, body, origin) {
   return proc;
 }
 
+// --- Only proxies that can open the campaign's address are used ------------------------------------------------
+// A proxy that passes a generic test can still be unable to open the page a campaign visits (many free proxies cannot
+// tunnel HTTPS, or are blocked by the site). So before a campaign that uses proxies starts, its proxies are tried on
+// the campaign's own address — in parallel, stopping as soon as enough have passed — and only those are used. If none
+// pass, the campaign does not start: quietly running without proxies would expose the user's own address.
+function campaignTestUrl(mode, body) {
+  const raw = mode === 'gmaps' ? (body.website || body.targetUrl) : (body.url || body.targetUrl);
+  if (!raw) return null;
+  try { return normalizeUrlInput(raw, false, 'URL') || null; } catch (_) { return null; }
+}
+
+async function verifyCampaignProxies(mode, body) {
+  const wanted = resolveProxies(body);
+  if (!wanted.useProxies || !wanted.proxies.length) return { body, info: null };      // direct connection: nothing to verify
+  const started = Date.now();
+  const sessions = Math.min(toPositiveInt(body.sessions, 1), MAX_SESSIONS);
+  const needed = Math.max(1, Math.min(sessions, 100));
+
+  // clean copies; ones already known to work first (fastest first), unknown next, ones that failed before last
+  const records = [];
+  for (const p of wanted.proxies) {
+    const c = cleanProxyRecord(p);
+    if (!c) continue;
+    c._rank = p.status === 'working' ? 0 : p.status === 'dead' ? 2 : 1;
+    c._ms = typeof p.ms === 'number' ? p.ms : 1e9;
+    records.push(c);
+  }
+  records.sort((a, b) => a._rank - b._rank || a._ms - b._ms);
+
+  let url = campaignTestUrl(mode, body);
+  let site = url ? new URL(url).origin : 'generic';
+  let fallback = null;
+  const split = (siteKey) => {
+    const good = [], unknown = [];
+    let cached = 0;
+    for (const p of records) {
+      const c = cachedCheck(p, siteKey);
+      if (c && c.ok) { good.push(p); cached++; } else if (!c) unknown.push(p);
+    }
+    return { good, unknown, cached };
+  };
+  const run = async (testUrl, list, want) => {
+    const job = new ValidationJob('pre_' + (++validationSeq), list, { concurrency: 500, timeoutMs: 6000, stopAfterWorking: want, testUrl, updateStatus: false, removeDead: false, onResult: rememberCheck });
+    const timer = setTimeout(() => job.cancel(), 60000);
+    await job.finished;
+    clearTimeout(timer);
+    return job;
+  };
+
+  let { good, unknown, cached } = split(site);
+  let checked = 0;
+  if (good.length < needed && unknown.length) {
+    let job = await run(url, unknown, needed - good.length);
+    if (job.status === 'error' && url) {
+      // The address does not open for us even without a proxy (it may turn away non-browser clients while real browsers
+      // get in). That is not a reason to block the campaign: fall back to the quick general check instead.
+      fallback = job.error;
+      url = null; site = 'generic';
+      ({ good, unknown, cached } = split(site));
+      job = good.length < needed && unknown.length ? await run(null, unknown, needed - good.length) : null;
+    }
+    if (job) {
+      if (job.status === 'error') throw httpError(503, job.error);
+      checked = job.done;
+      unknown.forEach((p, i) => { if (job.results[i] && job.results[i].ok) good.push(p); });
+    }
+  }
+  const info = { url, tested: records.length, checked, verified: good.length, cached, seconds: +((Date.now() - started) / 1000).toFixed(1), ...(fallback ? { fallback } : {}) };
+  if (!good.length) {
+    const err = httpError(422, `None of the ${records.length} proxies could open ${url || 'the test address'}${checked && checked < records.length ? ` (${checked} checked in ${info.seconds} s)` : ''}. Load proxies that work for this site, or run the campaign without proxies.`);
+    err.proxyCheck = info;
+    throw err;
+  }
+  const clean = good.map(({ type, host, port, username, password, raw }) => ({ type, host, port, username, password, raw }));
+  return { body: { ...body, proxies: clean, useLoadedProxies: false }, info };
+}
+
+// Start a campaign, first making sure the proxies it will use can open its address.
+async function startCampaignVerified(mode, body, origin) {
+  const def = CAMPAIGN_MODES[mode];
+  if (!def) throw httpError(400, `Unknown campaign mode "${mode}". Use one of: ${Object.keys(CAMPAIGN_MODES).join(', ')}`);
+  const request = body && typeof body === 'object' ? body : {};
+  def.build(request);                                   // a bad request (no URL, bad option …) fails at once, before any proxy is tried
+  const v = await verifyCampaignProxies(mode, request);
+  const proc = startCampaign(mode, v.body, origin);
+  if (v.info) {
+    proc.proxyCheck = v.info;
+    const where = v.info.url || 'the test address';
+    pushLog(proc, `${v.info.verified} of ${v.info.tested} proxies could open ${where} (${v.info.seconds} s) — using only those${v.info.fallback ? `. ${v.info.fallback.replace(/ Nothing was marked.*$/, '')}; the general test was used instead` : ''}`, 'info');
+  }
+  return proc;
+}
+
 function stopProcess(proc) {
   proc.stopRequested = true;
   proc.loop = false;
@@ -1518,6 +1645,7 @@ function describeProcess(proc) {
     lastSeq: proc.logSeq,
     logCount: proc.logs.length,
     usesProxies: !!(cfg.proxies && cfg.proxies.useProxies),
+    proxyCheck: proc.proxyCheck || null,
     privacy: { level: cfg.privacyLevel || 'standard', features: cfg.privacyFeatures || [] },
     config: {
       sessions: cfg.sessions, threads: cfg.threads, headless: cfg.headless, device: cfg.device,
@@ -2024,15 +2152,16 @@ async function handleRequest(req, res) {
   if (pathname === '/api/proxies/load' && method === 'POST') {
     const body = await readBody(req);
     let records = Array.isArray(body.proxies) ? body.proxies : [];
-    let badLines = 0;
+    let badLines = 0, invalidLines = [];
     if (typeof body.text === 'string' && body.text.trim()) {
       const type = ProxyTools.SCHEMES.includes(String(body.type).toLowerCase()) ? String(body.type).toLowerCase() : 'http';
       const t = ProxyTools.parseText(body.text, type);
       records = records.concat(t.proxies);
       badLines = t.invalid;
+      invalidLines = t.invalidLines;        // which lines failed and why — the page shows them and keeps them in the box
     }
     const r = addToProxyList(records);
-    sendJSON(res, 200, { success: true, count: loadedProxies.length, added: r.added, duplicates: r.duplicates, invalid: r.invalid + badLines, stats: proxyStats() });
+    sendJSON(res, 200, { success: true, count: loadedProxies.length, added: r.added, duplicates: r.duplicates, invalid: r.invalid + badLines, invalidLines, stats: proxyStats() });
     return;
   }
 
@@ -2093,8 +2222,8 @@ async function handleRequest(req, res) {
   // --- Proxies: check. start → poll status → (cancel). A job reports progress while it runs. ---
   if (pathname === '/api/proxies/validate/start' && method === 'POST') {
     const body = await readBody(req).catch(() => ({}));
-    try { const job = beginValidation(body); sendJSON(res, 200, { success: true, job: job.snapshot() }); }
-    catch (e) { sendJSON(res, e.status || 500, { success: false, error: e.message, ...(e.status === 409 && activeValidation ? { job: activeValidation.snapshot() } : {}) }); }
+    try { const job = beginValidation(body, { mcp: req.headers['x-td-client'] === 'mcp' }); sendJSON(res, 200, { success: true, job: job.snapshot() }); }
+    catch (e) { sendJSON(res, e.status || e.statusCode || 500, { success: false, error: e.message, ...(e.status === 409 && activeValidation ? { job: activeValidation.snapshot() } : {}) }); }
     return;
   }
   if (pathname === '/api/proxies/validate/status' && method === 'GET') {
@@ -2113,7 +2242,7 @@ async function handleRequest(req, res) {
   if (pathname === '/api/proxies/validate' && method === 'POST') {
     const body = await readBody(req).catch(() => ({}));
     let job;
-    try { job = beginValidation(body); } catch (e) { sendJSON(res, e.status || 500, { success: false, error: e.message }); return; }
+    try { job = beginValidation(body, { mcp: req.headers['x-td-client'] === 'mcp' }); } catch (e) { sendJSON(res, e.status || e.statusCode || 500, { success: false, error: e.message }); return; }
     res.on('close', () => { if (!res.writableEnded) job.cancel(); });   // the caller gave up — stop wasting connections
     await job.finished;
     if (job.status === 'error') { sendJSON(res, 503, { success: false, error: job.error }); return; }
@@ -2403,7 +2532,7 @@ async function handleRequest(req, res) {
       const body = await readBody(req);
       const sched = savedSchedules.find(sc => sc.id === body.id);
       if (!sched) { sendJSON(res, 404, { success: false, error: 'Schedule not found' }); return; }
-      const proc = runSchedule(sched, 'run now');
+      const proc = await runSchedule(sched, 'run now');
       persistSchedules();
       sendJSON(res, 200, { success: true, processId: proc.id, mode: proc.type, status: proc.status });
     } catch (e) {
@@ -2421,10 +2550,10 @@ async function handleRequest(req, res) {
       const mode = startMatch ? startMatch[1] : String(body.mode || '');
       // Who asked: the dashboard's own routes, an MCP client (it says so in X-TD-Client), or a plain API caller.
       const origin = req.headers['x-td-client'] === 'mcp' ? 'mcp' : (startMatch ? 'dashboard' : 'api');
-      const proc = startCampaign(mode, body, origin);
-      sendJSON(res, 200, { success: true, processId: proc.id, mode: proc.type, status: proc.status });
+      const proc = await startCampaignVerified(mode, body, origin);
+      sendJSON(res, 200, { success: true, processId: proc.id, mode: proc.type, status: proc.status, proxyCheck: proc.proxyCheck || null });
     } catch (e) {
-      sendJSON(res, e.statusCode || (e instanceof SyntaxError ? 400 : 500), { success: false, error: e.message });
+      sendJSON(res, e.statusCode || (e instanceof SyntaxError ? 400 : 500), { success: false, error: e.message, ...(e.proxyCheck ? { proxyCheck: e.proxyCheck } : {}) });
     }
     return;
   }
@@ -2465,7 +2594,7 @@ async function handleRequest(req, res) {
       const t = list.find(c => c.id === body.id);
       if (!t) throw httpError(404, 'Saved campaign not found');
       const origin = req.headers['x-td-client'] === 'mcp' ? 'mcp' : 'dashboard';
-      const proc = startCampaign(t.mode, savedCampaignRequest(t, body.overrides && typeof body.overrides === 'object' ? body.overrides : null), origin);
+      const proc = await startCampaignVerified(t.mode, savedCampaignRequest(t, body.overrides && typeof body.overrides === 'object' ? body.overrides : null), origin);
       t.lastRunAt = Date.now(); t.runCount = (t.runCount || 0) + 1; t.lastProcessId = proc.id;
       persistSavedCampaigns(list);
       pushLog(proc, `Started from saved campaign "${t.name}"`, 'info');

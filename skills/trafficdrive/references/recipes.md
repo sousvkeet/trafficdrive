@@ -46,6 +46,7 @@ Only after recipe 1 succeeded and the user approved the numbers.
 {"url": "https://staging.example.com", "sessions": 200, "threads": 5, "visitTimeMs": 20000, "delayMinSeconds": 1, "delayMaxSeconds": 4, "scrollDirection": "random", "internalLinkNavigation": true, "internalLinkCount": 3, "privacyProfile": "balanced"}
 ```
 
+- Campaigns verify their proxies on the target address by themselves before starting, so this step is optional. To clean the list up front for one site: `validate_proxies` with `{"testUrl": "https://www.example.com/", "stopAfterWorking": 50}` keeps only proxies that can open that page.
 - Need working free proxies quickly? Scrape, then stop checking as soon as there are enough: `scrape_free_proxies`, then `validate_proxies` with `{"stopAfterWorking": 30}`. Both calls take well under a minute.
 
 - Keep `threads` modest at first (3–5). Each thread is a full browser.

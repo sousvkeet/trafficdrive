@@ -25,6 +25,12 @@ If the tools don't appear at all, the MCP client wasn't configured, or the serve
 - **Limits:** `threads` is capped at 50 and `sessions` at 100000 by default. `get_catalog` shows the real limits.
 - **Organic mode with no keywords, Maps without `businessName`, `rpa` without `recordingId`:** these modes require them.
 
+## A campaign will not start: "None of the N proxies could open …"
+
+The campaign's proxies were each tried on the campaign's own address and none could open it, so the campaign was refused instead of running without proxies. Common reasons: the proxies are free ones that cannot tunnel HTTPS, the site blocks proxy traffic, or the proxies have all died since they were loaded. Tell the user and offer: load better proxies (their own, or `scrape_free_proxies` then `validate_proxies` with `testUrl` set to the campaign's address), or run without proxies (`useLoadedProxies: false`) only if they say so. Results are remembered for about 20 minutes, so retrying at once will not change the answer.
+
+If the log says the general test was used instead, the address would not open even without a proxy (some sites turn away anything that is not a real browser), so the proxies were only checked in general.
+
 ## Failing or slow sessions
 
 | Log pattern | Likely cause | What to try |

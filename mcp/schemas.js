@@ -37,7 +37,7 @@ const commonShape = {
   internalLinkNavigation: z.boolean().optional().describe('After the main page, also open some of the site\'s internal links.'),
   internalLinkCount: z.number().int().min(1).max(50).optional().describe('How many internal links to open (with internalLinkNavigation).'),
   internalLinkReadTimeMs: z.number().int().min(500).max(600000).optional().describe('Time spent on each internal page, in milliseconds.'),
-  useLoadedProxies: z.boolean().default(true).describe('Route sessions through the proxies loaded with add_proxies / scrape_free_proxies (one per session, round-robin). Has no effect when none are loaded.'),
+  useLoadedProxies: z.boolean().default(true).describe('Route sessions through the proxies loaded with add_proxies / scrape_free_proxies (one per session, round-robin). Has no effect when none are loaded. Before the campaign starts, the proxies are tried on the campaign\'s own address and only those that can open it are used; if none can, the campaign does not start (it never silently runs without proxies). Takes a few seconds, up to a minute.'),
   customBrowserPath: z.string().max(1024).optional().describe('Path of a browser to use. Must be one of the browsers listed by list_browsers.'),
   loop: z.boolean().default(false).describe('When the campaign completes, start it again automatically until stopped.'),
   loopDelaySeconds: z.number().int().min(1).max(86400).optional().describe('Pause between loop iterations in seconds (default 5).'),

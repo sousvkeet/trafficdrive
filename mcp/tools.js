@@ -29,6 +29,7 @@ function registerTools(server, ctx) {
       progress: { completed: st.completed || 0, failed: st.failed || 0, running: st.running || 0, pending: st.pending || 0, total: st.total || 0, percent: st.progress || 0 },
       loop: p.loop, iteration: p.iteration, startedAt: p.startedAt, endedAt: p.endedAt,
       usesProxies: p.usesProxies, privacyLevel: p.privacy && p.privacy.level,
+      ...(p.proxyCheck ? { proxyCheck: p.proxyCheck } : {}),
     };
   }
   const logLine = (l) => `[${l.time.slice(11, 19)}] ${l.type.toUpperCase().padEnd(7)} ${l.message}`;
@@ -55,7 +56,7 @@ function registerTools(server, ctx) {
   async function startCampaign(mode, args) {
     const problem = await browserProblem(args.customBrowserPath);
     if (problem) return fail(problem);
-    const r = await api.post('/api/campaigns/start', S.toRequestBody(mode, args), { timeoutMs: 60000 });
+    const r = await api.post('/api/campaigns/start', S.toRequestBody(mode, args), { timeoutMs: 150000 });
     const { process: p } = await api.get(`/api/processes/${enc(r.processId)}`);
     return ok({ campaignId: r.processId, ...summarizeCampaign(p) },
       `Started ${p.modeLabel} campaign ${r.processId} (${p.config.sessions} session(s), ${p.config.threads} thread(s)). Track it with get_campaign or wait_for_campaign.`);
@@ -277,26 +278,27 @@ function registerTools(server, ctx) {
 
   tool('validate_proxies', {
     title: 'Validate proxies',
-    description: 'Test proxies by connecting through each one to a test server (a proxy only counts as working if the real server answers; proxies that hijack the request do not). Many are tested at once, so thousands take about a minute, not an hour. With no "proxies", tests the whole loaded list (or only the not-yet-checked ones) and by default REMOVES the dead ones from it; set removeDead=false to keep them marked. With "proxies", only tests those entries and removes nothing. stopAfterWorking ends the run as soon as that many working proxies are found.',
+    description: 'Test proxies by connecting through each one to a test server (a proxy only counts as working if the real server answers; proxies that hijack the request do not). With testUrl, each proxy must open that actual page — HTTPS included, with the certificate checked — which is the test that matters for a campaign (many free proxies pass the quick test but cannot open HTTPS sites). Many are tested at once, so thousands take about a minute, not an hour. With no "proxies", tests the whole loaded list (or only the not-yet-checked ones) and by default REMOVES the dead ones from it; set removeDead=false to keep them marked. With "proxies", only tests those entries and removes nothing. stopAfterWorking ends the run as soon as that many working proxies are found.',
     inputSchema: {
       proxies: z.array(z.string().min(1).max(500)).min(1).max(2000).optional().describe('Entries to test instead of the whole loaded list.'),
       concurrency: z.number().int().min(1).max(500).optional().describe('How many to test at the same time (default 500).'),
       timeoutSeconds: z.number().min(1).max(30).optional().describe('Give up on a proxy after this long (default 5).'),
+      testUrl: z.string().min(3).max(2048).optional().describe('Open this public web address through each proxy instead of the quick general test (use the campaign\'s address). A proxy then counts as working only if it can open that page — including HTTPS pages.'),
       stopAfterWorking: z.number().int().min(1).optional().describe('Stop as soon as this many working proxies have been found.'),
       onlyUnchecked: z.boolean().optional().describe('Loaded list only: skip proxies that were already checked.'),
       removeDead: z.boolean().default(true).describe('Loaded list only: remove the dead ones when the check completes.'),
     },
     annotations: { ...DESTRUCTIVE, openWorldHint: true },
-  }, async ({ proxies, concurrency, timeoutSeconds, stopAfterWorking, onlyUnchecked, removeDead }, extra) => {
-    const opts = { ...(concurrency ? { concurrency } : {}), ...(timeoutSeconds ? { timeoutSeconds } : {}), ...(stopAfterWorking ? { stopAfterWorking } : {}) };
+  }, async ({ proxies, concurrency, timeoutSeconds, stopAfterWorking, testUrl, onlyUnchecked, removeDead }, extra) => {
+    const opts = { ...(concurrency ? { concurrency } : {}), ...(timeoutSeconds ? { timeoutSeconds } : {}), ...(stopAfterWorking ? { stopAfterWorking } : {}), ...(testUrl ? { testUrl } : {}) };
     if (proxies) {
       const parsed = proxies.map((l) => parseProxyLine(l)).filter((r) => r.proxy).map((r) => r.proxy);
       if (!parsed.length) return fail('None of the entries could be parsed.');
       const r = await api.post('/api/proxies/validate', { proxies: parsed, ...opts }, { timeoutMs: 20 * 60 * 1000, signal: extra && extra.signal });
       const results = r.results.map((x, i) => ({ ...maskProxy(parsed[i]), ok: x.ok, ms: x.ms }));
       const fastest = results.filter((x) => x.ok).sort((a, b) => a.ms - b.ms).slice(0, 10);
-      return ok({ tested: r.total, working: r.working, dead: r.checked - r.working, notChecked: r.total - r.checked, removedDeadFromLoaded: false, loadedNow: r.stats.total, results: results.slice(0, 200), fastest },
-        `${r.working}/${r.total} proxies work.`);
+      return ok({ tested: r.total, working: r.working, dead: r.checked - r.working, notChecked: r.total - r.checked, removedDeadFromLoaded: false, loadedNow: r.stats.total, results: results.slice(0, 200), fastest, testedAgainst: testUrl || null },
+        `${r.working}/${r.total} proxies ${testUrl ? 'can open ' + testUrl : 'work'}.`);
     }
     const started = await api.post('/api/proxies/validate/start', { ...opts, onlyUnchecked: !!onlyUnchecked, removeDead: removeDead !== false });
     const id = started.job.id;
@@ -317,8 +319,8 @@ function registerTools(server, ctx) {
     if (job.status === 'error') return fail(job.error);
     const top = await api.get('/api/proxies', { query: { status: 'working', sort: 'speed', limit: 10 } });
     const removed = job.options.removeDead && job.status === 'done';
-    return ok({ tested: job.total, checked: job.done, working: job.working, dead: job.dead, notChecked: job.total - job.done, stoppedEarly: job.stoppedEarly, cancelled: job.status === 'cancelled', removedDeadFromLoaded: removed, removed: job.removed, loadedNow: top.stats.total, avgMs: job.avgMs, seconds: Math.round(job.elapsedMs / 1000), fastest: top.proxies.map(maskProxy) },
-      `${job.working}/${job.done} proxies work (${Math.round(job.elapsedMs / 1000)} s)${removed ? `; ${job.removed} dead removed` : ''}${job.stoppedEarly ? '; stopped early' : ''}${job.status === 'cancelled' ? '; cancelled' : ''}.`);
+    return ok({ tested: job.total, checked: job.done, working: job.working, dead: job.dead, notChecked: job.total - job.done, stoppedEarly: job.stoppedEarly, cancelled: job.status === 'cancelled', removedDeadFromLoaded: removed, removed: job.removed, loadedNow: top.stats.total, avgMs: job.avgMs, seconds: Math.round(job.elapsedMs / 1000), testedAgainst: job.testUrl, fastest: top.proxies.map(maskProxy) },
+      `${job.working}/${job.done} proxies ${job.testUrl ? `can open ${job.testUrl}` : 'work'} (${Math.round(job.elapsedMs / 1000)} s)${removed ? `; ${job.removed} dead removed` : ''}${job.stoppedEarly ? '; stopped early' : ''}${job.status === 'cancelled' ? '; cancelled' : ''}.`);
   });
 
   tool('remove_proxies', {
@@ -557,7 +559,7 @@ function registerTools(server, ctx) {
   }, async ({ id, overrides }) => {
     const problem = await browserProblem(overrides && overrides.customBrowserPath);
     if (problem) return fail(problem);
-    const r = await api.post('/api/saved-campaigns/run', { id, overrides }, { timeoutMs: 60000 });
+    const r = await api.post('/api/saved-campaigns/run', { id, overrides }, { timeoutMs: 150000 });
     const { process: p } = await api.get(`/api/processes/${enc(r.processId)}`);
     return ok({ campaignId: r.processId, savedCampaignId: id, ...summarizeCampaign(p) }, `Started campaign ${r.processId} from saved campaign ${id}.`);
   });
@@ -633,7 +635,7 @@ function registerTools(server, ctx) {
     description: 'Start a saved schedule\'s campaign immediately (its timer is not changed). Returns the new campaign id.',
     inputSchema: { id: z.string().min(1) }, annotations: VISITS_WEB,
   }, async ({ id }) => {
-    const r = await api.post('/api/schedule/run', { id }, { timeoutMs: 60000 });
+    const r = await api.post('/api/schedule/run', { id }, { timeoutMs: 150000 });
     return ok({ campaignId: r.processId, mode: r.mode, status: r.status }, `Started campaign ${r.processId} from schedule ${id}.`);
   });
 
@@ -715,7 +717,7 @@ function registerTools(server, ctx) {
     }, annotations: VISITS_WEB,
   }, async ({ recordingId, speed, headless, background }, extra) => {
     if (background) {
-      const r = await api.post('/api/campaigns/start', { mode: 'rpa', recordingId, speed, headless }, { timeoutMs: 60000 });
+      const r = await api.post('/api/campaigns/start', { mode: 'rpa', recordingId, speed, headless }, { timeoutMs: 150000 });
       const { process: p } = await api.get(`/api/processes/${enc(r.processId)}`);
       return ok({ campaignId: r.processId, ...summarizeCampaign(p) }, `Replay started as campaign ${r.processId}.`);
     }
