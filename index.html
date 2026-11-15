@@ -256,7 +256,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--t1);display:flex;h
       <div class="card" style="margin-bottom:0">
         <div class="ch"><div class="ci p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div><span class="ct" data-i18n="import_proxies">Import Proxies</span></div>
         <div class="cb">
-          <div class="f"><label class="fl" data-i18n="paste_proxy_list">Paste Proxy List</label><textarea id="px-input" rows="8" style="font-family:var(--mono);font-size:12px" placeholder="Format: IP:PORT&#10;Or: IP:PORT:USER:PASS&#10;One per line" data-i18n-ph="ph_proxy_fmt"></textarea></div>
+          <div class="f"><label class="fl" data-i18n="paste_proxy_list">Paste Proxy List</label><textarea id="px-input" oninput="pxClearLoadMsg()" rows="8" style="font-family:var(--mono);font-size:12px" placeholder="Format: IP:PORT&#10;Or: IP:PORT:USER:PASS&#10;One per line" data-i18n-ph="ph_proxy_fmt"></textarea></div>
           <div class="f"><label class="fl" data-i18n="proxy_type">Proxy Type</label><select id="px-type"><option data-i18n="opt_http">HTTP</option><option data-i18n="opt_https">HTTPS</option><option data-i18n="opt_socks4">SOCKS4</option><option data-i18n="opt_socks5">SOCKS5</option></select></div>
           <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-p" onclick="loadProxies()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0018 9h-1.26A8 8 0 103 16.3"/></svg><span data-i18n="load_proxies">Load Proxies</span></button><button class="btn btn-g" id="pxScrapeBtn" onclick="scrapeProxies()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg><span id="pxScrapeLbl" data-i18n="scrape_proxies">Scrape Proxies</span></button><button class="btn btn-o" id="pxValidateBtn" onclick="validateAllPx()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg><span data-i18n="validate_all">Validate All</span></button><button class="btn btn-danger" onclick="clearProxies()" style="margin-left:auto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg><span data-i18n="clear">Clear</span></button></div>
           <div class="px-note" id="pxLoadMsg" style="white-space:pre-line"></div>
@@ -1299,6 +1299,7 @@ const PX_OPTS_KEY='pxCheckOptions';
 const pxNum=n=>(Number(n)||0).toLocaleString();
 async function pxGet(path){const r=await apiFetch('http://localhost:3000'+path);const d=await r.json().catch(()=>({}));if(!r.ok||d.success===false){const e=new Error(d.error||('HTTP '+r.status));e.status=r.status;throw e;}return d;}
 async function pxPost(path,body){const r=await apiFetch('http://localhost:3000'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});const d=await r.json().catch(()=>({}));if(!r.ok||d.success===false){const e=new Error(d.error||('HTTP '+r.status));e.status=r.status;e.data=d;throw e;}return d;}
+function pxClearLoadMsg(){const m=document.getElementById('pxLoadMsg');if(m){m.textContent='';m.className='px-note';}}
 function pxPageActive(){const pg=document.getElementById('pg-proxies');return !!(pg&&pg.classList.contains('active'));}
 
 // checking options, remembered between sessions
@@ -1412,6 +1413,7 @@ function pxSummarize(j){
   if(j.status==='error'){el.className='px-note px-summary bad';el.textContent=j.error;addLog('error',j.error);return;}
   let msg=pxNum(j.done)+' '+t('px_checked')+' · '+Math.max(1,Math.round(j.elapsedMs/1000))+' s: '+pxNum(j.working)+' '+t('px_status_working').toLowerCase()+', '+pxNum(j.dead)+' '+t('px_status_dead').toLowerCase();
   if(j.removed)msg+=' — '+pxNum(j.removed)+' '+t('px_removed');
+  if(j.skipped)msg+=' · '+pxNum(j.skipped)+' '+t('px_skipped');
   if(j.stoppedEarly)msg+=' ('+t('px_stopped_early')+')';
   if(j.testUrl){try{msg+=' · '+t('px_against')+' '+new URL(j.testUrl).host;}catch(e){}}
   if(j.status==='cancelled')msg=t('px_cancelled')+': '+msg;
@@ -1433,6 +1435,7 @@ async function pxPoll(){
 async function validateAllPx(auto){
   if(!(px.stats&&px.stats.total)){if(auto!==true)addLog('error',t('no_proxies_validate'));return;}
   const sum=document.getElementById('pxSummary');sum.textContent='';sum.className='px-note px-summary';
+  if(auto!==true)pxClearLoadMsg();                           // (right after a load the "N added" message stays while the new proxies are checked)
   pxSaveOpts();
   const body=pxOpts();delete body.autoCheck;
   if(auto===true)body.onlyUnchecked=true;                    // after a load or scrape, only the new proxies need checking
@@ -1445,8 +1448,9 @@ async function validateAllPx(auto){
   }
 }
 async function pxStop(){try{await pxPost('/api/proxies/validate/cancel',{});}catch(e){addLog('error',e.message);}pxPoll();}
-async function pxRemoveDead(){try{const d=await pxPost('/api/proxies/remove-dead',{});addLog('success',pxNum(d.removed)+' '+t('px_removed'));await pxRefresh();}catch(e){addLog('error',e.message);}}
+async function pxRemoveDead(){pxClearLoadMsg();try{const d=await pxPost('/api/proxies/remove-dead',{});addLog('success',pxNum(d.removed)+' '+t('px_removed'));await pxRefresh();}catch(e){addLog('error',e.message);}}
 async function clearProxies(){
+  pxClearLoadMsg();
   try{await pxPost('/api/proxies/clear',{});}catch(e){addLog('warn',t('proxies_local_backend_unreachable'));}
   document.getElementById('px-input').value='';px.page=0;document.getElementById('pxSummary').textContent='';
   await pxRefresh();addLog('info',t('proxies_cleared'));
@@ -1454,7 +1458,7 @@ async function clearProxies(){
 
 // scrape: every source that is switched on is downloaded at once
 async function scrapeProxies(){
-  if(px.busyScrape)return;px.busyScrape=true;
+  if(px.busyScrape)return;px.busyScrape=true;pxClearLoadMsg();
   const btn=document.getElementById('pxScrapeBtn'),lbl=document.getElementById('pxScrapeLbl');btn.disabled=true;lbl.textContent=t('px_scraping');
   addLog('info',t('scraping_proxies'));
   try{

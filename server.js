@@ -637,10 +637,14 @@ function beginValidation(body, { mcp = false } = {}) {
     opts.removeDead = false;
   } else {
     onLoaded = true;
-    subject = opts.onlyUnchecked ? loadedProxies.filter((p) => !p.status) : loadedProxies.slice();
+    // "already checked" means checked FOR THIS ADDRESS: a proxy that only passed a general check (or was checked against
+    // another site) has not shown that it can open this one, so it is checked again.
+    const site = opts.testUrl ? new URL(opts.testUrl).origin : null;
+    subject = opts.onlyUnchecked ? loadedProxies.filter((p) => !(p.status && (p.checkedFor || null) === site)) : loadedProxies.slice();
+    opts.skipped = loadedProxies.length - subject.length;
   }
   if (!subject.length) {
-    const e = new Error(onLoaded && opts.onlyUnchecked && loadedProxies.length ? 'Every proxy has already been checked' : 'There are no proxies to check');
+    const e = new Error(onLoaded && opts.onlyUnchecked && loadedProxies.length ? `Every proxy has already been checked${opts.testUrl ? ' for this address' : ''}` : 'There are no proxies to check');
     e.status = 400; throw e;
   }
   opts.onFinish = (job) => {

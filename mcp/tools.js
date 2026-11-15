@@ -285,7 +285,7 @@ function registerTools(server, ctx) {
       timeoutSeconds: z.number().min(1).max(30).optional().describe('Give up on a proxy after this long (default 5).'),
       testUrl: z.string().min(3).max(2048).optional().describe('Open this public web address through each proxy instead of the quick general test (use the campaign\'s address). A proxy then counts as working only if it can open that page — including HTTPS pages.'),
       stopAfterWorking: z.number().int().min(1).optional().describe('Stop as soon as this many working proxies have been found.'),
-      onlyUnchecked: z.boolean().optional().describe('Loaded list only: skip proxies that were already checked.'),
+      onlyUnchecked: z.boolean().optional().describe('Loaded list only: skip proxies that were already checked for this address (or already checked in general when no testUrl is given). Proxies checked only for a different address are checked again.'),
       removeDead: z.boolean().default(true).describe('Loaded list only: remove the dead ones when the check completes.'),
     },
     annotations: { ...DESTRUCTIVE, openWorldHint: true },
@@ -319,7 +319,7 @@ function registerTools(server, ctx) {
     if (job.status === 'error') return fail(job.error);
     const top = await api.get('/api/proxies', { query: { status: 'working', sort: 'speed', limit: 10 } });
     const removed = job.options.removeDead && job.status === 'done';
-    return ok({ tested: job.total, checked: job.done, working: job.working, dead: job.dead, notChecked: job.total - job.done, stoppedEarly: job.stoppedEarly, cancelled: job.status === 'cancelled', removedDeadFromLoaded: removed, removed: job.removed, loadedNow: top.stats.total, avgMs: job.avgMs, seconds: Math.round(job.elapsedMs / 1000), testedAgainst: job.testUrl, fastest: top.proxies.map(maskProxy) },
+    return ok({ tested: job.total, checked: job.done, working: job.working, dead: job.dead, notChecked: job.total - job.done, skippedAlreadyVerified: job.skipped, stoppedEarly: job.stoppedEarly, cancelled: job.status === 'cancelled', removedDeadFromLoaded: removed, removed: job.removed, loadedNow: top.stats.total, avgMs: job.avgMs, seconds: Math.round(job.elapsedMs / 1000), testedAgainst: job.testUrl, fastest: top.proxies.map(maskProxy) },
       `${job.working}/${job.done} proxies ${job.testUrl ? `can open ${job.testUrl}` : 'work'} (${Math.round(job.elapsedMs / 1000)} s)${removed ? `; ${job.removed} dead removed` : ''}${job.stoppedEarly ? '; stopped early' : ''}${job.status === 'cancelled' ? '; cancelled' : ''}.`);
   });
 

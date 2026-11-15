@@ -152,7 +152,7 @@ function checkProxy(proxy, { target, timeoutMs, signal, expect = 'generic' }) {
 }
 
 // A validation run over `proxies` (the objects themselves).
-//   opts: { concurrency, timeoutMs, stopAfterWorking, removeDead, onlyUnchecked, testUrl, updateStatus, onResult, onFinish }
+//   opts: { concurrency, timeoutMs, stopAfterWorking, removeDead, onlyUnchecked, skipped, testUrl, updateStatus, onResult, onFinish }
 //   testUrl      — open this address through each proxy (see the top of the file); omitted = the quick check
 //   updateStatus — write status / ms / checkedAt / checkedFor onto each proxy (default true)
 //   onResult(proxy, { ok, ms }, site) — called for every finished check (the server keeps a short-lived memory of them)
@@ -239,7 +239,7 @@ class ValidationJob {
       id: this.id, status: this.status, total: this.total, done: this.done, working: this.working, dead: this.dead,
       avgMs: this.working ? Math.round(this.sumMs / this.working) : null,
       startedAt: this.startedAt, finishedAt: this.finishedAt, elapsedMs: end - this.startedAt,
-      target: this.target, testUrl: this.opts.testUrl || null, error: this.error, stoppedEarly: this.stoppedEarly, removed: this.removed,
+      target: this.target, testUrl: this.opts.testUrl || null, error: this.error, stoppedEarly: this.stoppedEarly, removed: this.removed, skipped: this.opts.skipped || 0,
       options: { concurrency: this.opts.concurrency, timeoutMs: this.opts.timeoutMs, stopAfterWorking: this.opts.stopAfterWorking || null, removeDead: !!this.opts.removeDead, onlyUnchecked: !!this.opts.onlyUnchecked },
     };
   }
