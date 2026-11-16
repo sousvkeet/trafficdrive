@@ -265,6 +265,22 @@ function registerTools(server, ctx) {
     return ok({ id, name: r.source.name, enabled: r.source.enabled }, `"${r.source.name}" is now ${r.source.enabled ? 'on' : 'off'}.`);
   });
 
+  tool('proxy_automation', {
+    title: 'Automatic proxies',
+    description: 'Show or change "Automatic proxies" (on by default in the desktop app): working proxies are saved and loaded again at every start, re-checked in the background so dead ones drop out, and topped up from the enabled sources — checked against the last campaign\'s address — whenever fewer than `target` are ready. With no arguments it only reports the status. Note: while proxies are loaded, campaigns use them unless useLoadedProxies is false.',
+    inputSchema: {
+      enabled: z.boolean().optional().describe('Switch automatic proxies on or off.'),
+      target: z.number().int().min(1).max(1000).optional().describe('Keep at least this many working proxies ready.'),
+      runNow: z.boolean().optional().describe('Look for working proxies now instead of waiting for the next round.'),
+    },
+    annotations: { ...WRITE_IDEMPOTENT, openWorldHint: true },
+  }, async ({ enabled, target, runNow }) => {
+    const changes = { ...(enabled !== undefined ? { enabled } : {}), ...(target !== undefined ? { target } : {}), ...(runNow ? { runNow: true } : {}) };
+    const r = Object.keys(changes).length ? await api.post('/api/proxies/auto', changes) : await api.get('/api/proxies/auto');
+    const { success, ...st } = r;
+    return ok(st, `Automatic proxies are ${st.enabled ? 'on' : 'off'}: ${st.ready}/${st.target} working proxies ready${st.state === 'inactive' ? ' (it runs while the desktop app is open)' : st.message ? '. ' + st.message : '.'}`);
+  });
+
   tool('scrape_free_proxies', {
     title: 'Scrape free proxies',
     description: 'Download the public proxy lists that are switched on (see list_proxy_sources) — or only the given sourceIds — all at once, and add what they contain. Free public proxies are slow, short-lived and untrusted: run validate_proxies afterwards and avoid sending sensitive traffic through them. Takes about 15 seconds.',

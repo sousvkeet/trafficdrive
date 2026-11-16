@@ -36,7 +36,8 @@ async function startBackend() {
     // Start the server asynchronously
     // publishConnectionInfo lets local tools (the MCP server) attach to this
     // running app; set TD_NO_CONNECTION_FILE=1 to turn that off.
-    backendServer = await serverModule.startServer({ token: API_TOKEN, publishConnectionInfo: true });
+    // proxyAutomation: keep working proxies loaded (saved across restarts, topped up when too few)
+    backendServer = await serverModule.startServer({ token: API_TOKEN, publishConnectionInfo: true, proxyAutomation: true });
     console.log('[Backend] Server started on port 3000.');
   } catch (err) {
     console.error('[Backend] Failed to start server:', err.message);

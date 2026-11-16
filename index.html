@@ -56,6 +56,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--t1);display:flex;h
 .px-src-res{font-size:11px;color:var(--t3);text-align:right;max-width:38%;}.px-src-res.bad{color:var(--red);}
 .px-src-del{background:none;border:none;color:var(--t3);cursor:pointer;font-size:13px;padding:4px 6px;border-radius:6px;}.px-src-del:hover{color:var(--red);background:var(--reddim);}
 .px-src-count{font-size:11.5px;color:var(--t3);}
+.px-auto-row{display:grid;grid-template-columns:1fr 90px auto;gap:8px;align-items:center;margin-top:12px;}.px-auto-row .fl{margin:0;}
 .px-add{margin-top:14px;padding-top:14px;border-top:1px solid var(--bdr);}.px-add-row{display:grid;grid-template-columns:1fr 150px auto;gap:8px;}
 .px-progress{padding:12px 16px;border-bottom:1px solid var(--bdr);}.px-bar{height:8px;background:var(--inp);border-radius:6px;overflow:hidden;}.px-bar-fill{height:100%;width:0;background:var(--p);transition:width .3s;}
 .px-prog-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px;font-size:12px;color:var(--t2);}
@@ -273,6 +274,14 @@ body{font-family:var(--font);background:var(--bg);color:var(--t1);display:flex;h
             <label class="px-check"><input type="checkbox" id="pxOnlyNew" onchange="pxSaveOpts()"><span data-i18n="px_opt_only_new">Only check proxies that were not checked yet</span></label>
             <label class="px-check"><input type="checkbox" id="pxRemoveDead" checked onchange="pxSaveOpts()"><span data-i18n="px_opt_remove">Remove dead proxies when finished</span></label>
           </details>
+        </div>
+      </div>
+      <div class="card" id="pxAutoCard" style="margin-bottom:0">
+        <div class="ch"><div class="ci p"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg></div><span class="ct" data-i18n="px_auto_title">Automatic proxies</span><div class="tog on" id="pxAutoTog" onclick="pxToggleAuto()" style="margin-left:auto" title="On / off"><div class="tog-k"></div></div></div>
+        <div class="cb">
+          <div class="px-note" style="margin-top:0" data-i18n="px_auto_desc">Working proxies are saved and loaded every time TrafficDrive starts, re-checked in the background so dead ones drop out, and topped up from the sources below whenever fewer than this many are ready. New ones are checked against your last campaign's address.</div>
+          <div class="px-auto-row"><label class="fl" for="pxAutoTarget" data-i18n="px_auto_target">Keep at least this many working</label><input type="number" id="pxAutoTarget" min="1" max="1000" value="50" onchange="pxSetAutoTarget()"><button class="btn btn-o" id="pxAutoNow" onclick="pxAutoRunNow()" style="padding:6px 12px;font-size:12px"><span data-i18n="px_auto_now">Find now</span></button></div>
+          <div class="px-note" id="pxAutoStatus" style="white-space:pre-line"></div>
         </div>
       </div>
       <div class="card" id="pxSourcesCard" style="margin-bottom:0">
@@ -1294,7 +1303,7 @@ function getCategoryLogo(category){
 }
 
 // ---- Proxies page: the list lives on the backend; this page shows one page of it ----
-const px={testUrlAuto:true,page:0,size:100,status:'all',q:'',sort:'added',filtered:0,stats:null,job:null,poll:null,watching:null,lastTable:0,sources:[],busyScrape:false,opened:false,searchTimer:null,seq:0};
+const px={auto:null,autoPoll:null,testUrlAuto:true,page:0,size:100,status:'all',q:'',sort:'added',filtered:0,stats:null,job:null,poll:null,watching:null,lastTable:0,sources:[],busyScrape:false,opened:false,searchTimer:null,seq:0};
 const PX_OPTS_KEY='pxCheckOptions';
 const pxNum=n=>(Number(n)||0).toLocaleString();
 async function pxGet(path){const r=await apiFetch('http://localhost:3000'+path);const d=await r.json().catch(()=>({}));if(!r.ok||d.success===false){const e=new Error(d.error||('HTTP '+r.status));e.status=r.status;throw e;}return d;}
@@ -1507,11 +1516,42 @@ async function pxAddSource(){
   }catch(e){msg.className='px-note bad';msg.textContent=e.message;}
 }
 
+// automatic proxies: saved across restarts, re-checked, topped up (the work happens in the backend)
+async function pxLoadAuto(){
+  try{const d=await pxGet('/api/proxies/auto');px.auto=d;pxRenderAuto();
+    if(d.state==='checking'||d.state==='rechecking')pxStartPoll();          // show the background check's progress too
+  }catch(e){}
+}
+function pxRenderAuto(){
+  const d=px.auto;if(!d)return;
+  const tog=document.getElementById('pxAutoTog');if(tog)tog.classList.toggle('on',!!d.enabled);
+  const tgt=document.getElementById('pxAutoTarget');if(tgt&&document.activeElement!==tgt)tgt.value=d.target;
+  const nowBtn=document.getElementById('pxAutoNow');if(nowBtn)nowBtn.disabled=!d.enabled||d.state==='scraping'||d.state==='checking';
+  const host=u=>{try{return new URL(u).host;}catch(e){return u;}};
+  const time=ts=>ts?new Date(ts).toLocaleTimeString():'';
+  const lines=[];
+  if(!d.enabled)lines.push(t('px_auto_off'));
+  else if(d.state==='inactive')lines.push(t('px_auto_inactive'));
+  else{
+    lines.push(pxNum(d.ready)+' / '+pxNum(d.target)+' '+t('px_auto_ready')+(d.testUrl?' · '+t('px_against')+' '+host(d.testUrl):''));
+    const rest=String(d.message||'').replace(/^\d+( of \d+)? working proxies ready\.?\s*/,'');   // the count is already on the first line
+    if(rest)lines.push(rest);
+  }
+  if(d.lastTopUp){const r=d.lastTopUp;lines.push(t('px_auto_last_topup')+' '+time(r.at)+': '+(r.error&&!r.scraped?r.error:pxNum(r.scraped)+' '+t('px_auto_found')+' · '+pxNum(r.added)+' '+t('px_auto_new')+' · '+pxNum(r.working)+' '+t('px_auto_new_working')));}
+  if(d.lastRecheck){const r=d.lastRecheck;lines.push(t('px_auto_last_recheck')+' '+time(r.at)+': '+pxNum(r.working)+' / '+pxNum(r.checked)+' '+t('px_auto_still_work')+(r.removed?', '+pxNum(r.removed)+' '+t('px_removed'):''));}
+  if(d.saved&&d.saved.count)lines.push(t('px_auto_saved')+': '+pxNum(d.saved.count));
+  const st=document.getElementById('pxAutoStatus');if(st){st.textContent=lines.join('\n');st.className='px-note'+((d.lastTopUp&&d.lastTopUp.error&&!d.lastTopUp.scraped)?' warn':'');}
+}
+async function pxToggleAuto(){if(!px.auto)return;try{px.auto=await pxPost('/api/proxies/auto',{enabled:!px.auto.enabled});pxRenderAuto();addLog('info',t('px_auto_title')+': '+(px.auto.enabled?t('on_status'):t('off_status')));}catch(e){addLog('error',e.message);}}
+async function pxSetAutoTarget(){const v=parseInt(document.getElementById('pxAutoTarget').value,10);if(!(v>=1&&v<=1000))return;try{px.auto=await pxPost('/api/proxies/auto',{target:v});pxRenderAuto();}catch(e){addLog('error',e.message);}}
+async function pxAutoRunNow(){try{px.auto=await pxPost('/api/proxies/auto',{runNow:true});pxRenderAuto();addLog('info',t('px_auto_started'));setTimeout(pxLoadAuto,800);}catch(e){addLog('error',e.message);}}
+
 // opening the page: show what the backend holds (it may have changed — an AI assistant can load proxies too)
 function pxOpen(){
   if(!px.opened){px.opened=true;pxRestoreOpts();}
   pxPrefillTestUrl();
-  pxRefresh();pxLoadSources();
+  pxRefresh();pxLoadSources();pxLoadAuto();
+  if(!px.autoPoll)px.autoPoll=setInterval(()=>{if(pxPageActive()){pxLoadAuto();if(px.auto&&(px.auto.state==='scraping'||px.auto.state==='checking'))pxRefresh();}},3000);
   pxGet('/api/proxies/validate/status').then(d=>{px.job=d.job;pxRenderProgress();if(d.job&&d.job.status==='running'){px.watching=d.job.id;pxStartPoll();}}).catch(()=>{});
 }
 

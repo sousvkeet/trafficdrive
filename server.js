@@ -543,6 +543,7 @@ const MAX_REDIRECTS = 5;
 const ProxyTools = require('./ProxyTools.js');
 const ProxySources = require('./ProxySources.js');
 const { ValidationJob } = require('./ProxyValidator.js');
+const { createProxyAutomation } = require('./ProxyAutomation.js');
 const proxySources = ProxySources.createSourceStore(path.join(appDataDir(), 'proxy-sources.json'));
 
 const clampInt = (v, lo, hi, d) => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : d; };
@@ -597,6 +598,25 @@ function validationOptions(body) {
   };
 }
 
+// Download the proxy sources that are switched on (or the given ids) and add what they contain. Used by the Scrape
+// button and by the automation; only one runs at a time.
+let scrapeRunning = false;
+async function scrapeSourcesNow(ids) {
+  const all = proxySources.list();
+  const chosen = ids ? all.filter((x) => ids.includes(x.id)) : all.filter((x) => x.enabled);
+  if (!chosen.length) throw httpError(400, ids ? 'None of those sources exist' : 'No sources are switched on — switch at least one on first');
+  if (scrapeRunning) throw httpError(409, 'Proxy sources are being downloaded already');
+  scrapeRunning = true;
+  try {
+    return await ProxySources.scrapeSources(chosen, {
+      onResult: (x) => proxySources.recordRun(x.id, { at: Date.now(), ok: x.ok && !x.error, count: x.count, error: x.error, ms: x.ms }),
+    });
+  } finally { scrapeRunning = false; }
+}
+
+// Something changed in the proxy list → save the working ones (debounced) so they are there next time.
+function proxiesChanged() { if (typeof proxyAutomation !== 'undefined') proxyAutomation.changed(); }
+
 // What each proxy did the last time it was asked to open a site, kept for a while so that starting several campaigns
 // to the same site does not check the same proxies again. key: "<proxy>|<site>" (site is an origin, or "generic").
 const VERIFY_TTL_MS = 20 * 60 * 1000;
@@ -630,11 +650,17 @@ function beginValidation(body, { mcp = false } = {}) {
   if (activeValidation && activeValidation.status === 'running') { const e = new Error('A proxy check is already running'); e.status = 409; throw e; }
   const opts = validationOptions(body);
   opts.testUrl = parseTestUrl(body.testUrl, mcp);
+  if (opts.testUrl && typeof proxyAutomation !== 'undefined') proxyAutomation.noteTestUrl(opts.testUrl);
   opts.onResult = rememberCheck;
   let subject, onLoaded = false;
   if (Array.isArray(body.proxies) && body.proxies.length) {
     subject = body.proxies.map(cleanProxyRecord).filter(Boolean);
     opts.removeDead = false;
+  } else if (Array.isArray(body.subject)) {
+    // (internal) these loaded proxies only — used by the background re-check
+    onLoaded = true;
+    const inList = new Set(loadedProxies);
+    subject = body.subject.filter((p) => inList.has(p));
   } else {
     onLoaded = true;
     // "already checked" means checked FOR THIS ADDRESS: a proxy that only passed a general check (or was checked against
@@ -654,6 +680,7 @@ function beginValidation(body, { mcp = false } = {}) {
       loadedProxies = loadedProxies.filter((p) => p.status !== 'dead');
       job.removed = before - loadedProxies.length;
     }
+    if (onLoaded) proxiesChanged();
   };
   const job = new ValidationJob('val_' + (++validationSeq), subject, opts);
   validationJobs.set(job.id, job);
@@ -1520,6 +1547,23 @@ function startCampaign(mode, body, origin) {
   return proc;
 }
 
+// --- Working proxies load by themselves (ProxyAutomation.js) ---------------------------------------------------
+const proxyAutomation = createProxyAutomation({
+  file: path.join(appDataDir(), 'proxies.json'),
+  list: () => loadedProxies,
+  restore: (records) => { if (!loadedProxies.length) loadedProxies = records; else addToProxyList(records); },
+  addProxies: (records) => addToProxyList(records),
+  startCheck: (opts) => beginValidation(opts),
+  busy: () => !!(activeValidation && activeValidation.status === 'running') || scrapeRunning,
+  scrape: () => scrapeSourcesNow(null),
+  clean: cleanProxyRecord,
+  settings: () => getSettings().proxyAuto,
+  saveSettings: (patch) => saveSettings({ proxyAuto: { ...getSettings().proxyAuto, ...patch } }),
+  isPublic: (u) => { try { ProxySources.assertFetchable(u); return true; } catch (_) { return false; } },
+  log: (m) => console.log(m),
+});
+let proxiesRestored = false;
+
 // --- Only proxies that can open the campaign's address are used ------------------------------------------------
 // A proxy that passes a generic test can still be unable to open the page a campaign visits (many free proxies cannot
 // tunnel HTTPS, or are blocked by the site). So before a campaign that uses proxies starts, its proxies are tried on
@@ -1612,7 +1656,15 @@ async function startCampaignVerified(mode, body, origin) {
   if (!def) throw httpError(400, `Unknown campaign mode "${mode}". Use one of: ${Object.keys(CAMPAIGN_MODES).join(', ')}`);
   const request = body && typeof body === 'object' ? body : {};
   def.build(request);                                   // a bad request (no URL, bad option …) fails at once, before any proxy is tried
-  const v = await verifyCampaignProxies(mode, request);
+  proxyAutomation.noteCampaignUrl(campaignTestUrl(mode, request));   // new proxies are looked for on this campaign's address
+  let v;
+  try { v = await verifyCampaignProxies(mode, request); }
+  catch (e) {
+    if (e.statusCode === 422 && getSettings().proxyAuto.enabled && proxyAutomation.kick()) {
+      e.message += ' TrafficDrive is now looking for working proxies for this site in the background — try again in a minute or two.';
+    }
+    throw e;
+  }
   const proc = startCampaign(mode, v.body, origin);
   if (v.info) {
     proc.proxyCheck = v.info;
@@ -2174,6 +2226,7 @@ async function handleRequest(req, res) {
       invalidLines = t.invalidLines;        // which lines failed and why — the page shows them and keeps them in the box
     }
     const r = addToProxyList(records);
+    proxiesChanged();
     // Chrome cannot use SOCKS proxies that need a password: say so now rather than let them fail later
     const socksLogin = records.filter((p) => /^socks/i.test(String(p.type)) && p.username).length;
     sendJSON(res, 200, { success: true, count: loadedProxies.length, added: r.added, duplicates: r.duplicates, invalid: r.invalid + badLines, invalidLines, socksLogin, stats: proxyStats() });
@@ -2219,18 +2272,34 @@ async function handleRequest(req, res) {
   if (pathname === '/api/proxies/scrape' && method === 'POST') {
     const body = await readBody(req).catch(() => ({}));
     const ids = Array.isArray(body.sourceIds) ? body.sourceIds.map(String) : null;
-    const all = proxySources.list();
-    const chosen = ids ? all.filter((x) => ids.includes(x.id)) : all.filter((x) => x.enabled);
-    if (!chosen.length) { sendJSON(res, 400, { success: false, error: ids ? 'None of those sources exist' : 'No sources are switched on — switch at least one on first' }); return; }
     try {
-      const r = await ProxySources.scrapeSources(chosen, {
-        onResult: (x) => proxySources.recordRun(x.id, { at: Date.now(), ok: x.ok && !x.error, count: x.count, error: x.error, ms: x.ms }),
-      });
+      const r = await scrapeSourcesNow(ids);
       const add = addToProxyList(r.proxies);
+      proxiesChanged();
       sendJSON(res, 200, { success: true, scraped: r.proxies.length, added: add.added, total: loadedProxies.length, results: r.results, stats: proxyStats() });
     } catch (e) {
-      sendJSON(res, 500, { success: false, error: e.message });
+      sendJSON(res, e.statusCode || 500, { success: false, error: e.message });
     }
+    return;
+  }
+
+  // --- Automatic proxies: keep working ones loaded (saved across restarts, topped up when too few) ---
+  if (pathname === '/api/proxies/auto' && method === 'GET') {
+    sendJSON(res, 200, { success: true, ...proxyAutomation.status() });
+    return;
+  }
+  if (pathname === '/api/proxies/auto' && method === 'POST') {
+    const body = await readBody(req).catch(() => ({}));
+    const patch = {};
+    if (body.enabled !== undefined) patch.enabled = !!body.enabled;
+    if (body.target !== undefined) {
+      const t = parseInt(body.target, 10);
+      if (!(t >= 1 && t <= 1000)) { sendJSON(res, 400, { success: false, error: 'target must be between 1 and 1000' }); return; }
+      patch.target = t;
+    }
+    if (Object.keys(patch).length) saveSettings({ proxyAuto: { ...getSettings().proxyAuto, ...patch } });
+    if (body.runNow || patch.enabled === true || patch.target !== undefined) proxyAutomation.kick();
+    sendJSON(res, 200, { success: true, ...proxyAutomation.status() });
     return;
   }
 
@@ -2275,6 +2344,7 @@ async function handleRequest(req, res) {
       String(t.host).toLowerCase() === String(lp.host).toLowerCase() &&
       String(t.port) === String(lp.port) &&
       (!t.type || String(t.type).toLowerCase() === String(lp.type).toLowerCase())));
+    proxiesChanged();
     sendJSON(res, 200, { success: true, removed: before - loadedProxies.length, total: loadedProxies.length });
     return;
   }
@@ -2283,6 +2353,7 @@ async function handleRequest(req, res) {
   if (pathname === '/api/proxies/clear' && method === 'POST') {
     if (activeValidation && activeValidation.status === 'running') activeValidation.cancel();
     loadedProxies = [];
+    proxiesChanged();
     sendJSON(res, 200, { success: true });
     return;
   }
@@ -2291,6 +2362,7 @@ async function handleRequest(req, res) {
   if (pathname === '/api/proxies/remove-dead' && method === 'POST') {
     const before = loadedProxies.length;
     loadedProxies = loadedProxies.filter((p) => p.status !== 'dead');
+    proxiesChanged();
     sendJSON(res, 200, { success: true, removed: before - loadedProxies.length, total: loadedProxies.length, stats: proxyStats() });
     return;
   }
@@ -2876,7 +2948,11 @@ let appSettings = null;
 function getSettings() {
   if (!appSettings) {
     const saved = readJsonFile(SETTINGS_FILE, {});
-    appSettings = { allowMcpConnections: saved.allowMcpConnections !== false };
+    const pa = saved.proxyAuto || {};
+    appSettings = {
+      allowMcpConnections: saved.allowMcpConnections !== false,
+      proxyAuto: { enabled: pa.enabled !== false, target: Math.min(1000, Math.max(1, parseInt(pa.target, 10) || 50)) },
+    };
   }
   return appSettings;
 }
@@ -2944,6 +3020,11 @@ function startServer(opts = {}) {
     apiToken = crypto.randomBytes(32).toString('hex');
     console.log(`[NGF NOMI TOOLS] API token for this run: ${apiToken}`);
   }
+  if (!proxiesRestored) {
+    proxiesRestored = true;
+    const n = proxyAutomation.restore();
+    if (n) console.log(`[NGF NOMI TOOLS] Loaded ${n} working proxies saved last time.`);
+  }
   return new Promise((resolve, reject) => {
     const server = createServer();
 
@@ -2951,8 +3032,9 @@ function startServer(opts = {}) {
       PORT = server.address().port; // resolves port 0 → the real port
       startScheduler();
       syncConnectionFile();
+      if (opts.proxyAutomation) proxyAutomation.start();
     });
-    server.once('close', removeConnectionFile);
+    server.once('close', () => { removeConnectionFile(); proxyAutomation.stop(); });
 
     server.listen(PORT, '127.0.0.1', () => {
       console.log(`[NGF NOMI TOOLS] Backend server running on http://localhost:${PORT}`);
