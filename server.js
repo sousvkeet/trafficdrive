@@ -1306,6 +1306,11 @@ function commonConfig(body) {
     proxies: resolveProxies(body),
     privacyFeatures: privacy.features,
     privacyLevel: privacy.level,
+    autoClickPopAds: body.autoClickPopAds !== undefined ? !!body.autoClickPopAds : true,
+    popAdClicks: Math.min(Math.max(parseInt(body.popAdClicks, 10) || 1, 1), 5),
+    popAdDelayMs: Math.max(parseInt(body.popAdDelayMs, 10) || 2000, 500),
+    popAdStayTimeMs: Math.max(parseInt(body.popAdStayTimeMs, 10) || 8000, 2000),
+    popAdAutoClose: body.popAdAutoClose !== undefined ? !!body.popAdAutoClose : true,
     ...sessionDelayConfig(body),
   };
 }

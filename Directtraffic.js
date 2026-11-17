@@ -1,5 +1,6 @@
 const { launchBrowser: _launchBrowser } = require('./browser-launcher.js');
 const PopupHandler = require('./PopupHandler.js');
+const PopAdHandler = require('./PopAdHandler.js');
 const EventEmitter = require('events');
 const stopManager = require('./StopManager.js');
 const { installCaptchaGuard } = require('./CaptchaGuard.js');
@@ -66,7 +67,7 @@ function getViewport(device, autoRotateResolutions, vpWidth, vpHeight) {
     const pick = pickRandom(res);
     return { width: pick[0], height: pick[1], isMobile: false, hasTouch: false };
   }
-  return { width: vpWidth, height: vpHeight, isMobile: false, hasTouch: false };
+  return { width: vpWidth || 1280, height: vpHeight || 800, isMobile: false, hasTouch: false };
 }
 
 async function humanScroll(page, scrollDirection, waitTimeMs) {
@@ -438,6 +439,7 @@ async function runDirectSession(config, emitter, sessionNum, browserTracker, isS
 
   // Only a visit that actually loaded and finished counts as completed.
   let visitOk = false;
+  let popAdWatcher = null;
   try {
     if (isStopped()) {
       return false;
@@ -454,6 +456,16 @@ async function runDirectSession(config, emitter, sessionNum, browserTracker, isS
     const context = await browser.newContext(contextOptions);
 
     const page = await context.newPage();
+
+    // PopAds / Popunder watcher — catches any popunder tabs opened during visit,
+    // keeps the main site focused, dwells on ads to register impressions, and closes them.
+    popAdWatcher = PopAdHandler.setupPopunderWatcher(context, page, {
+      log: emitter,
+      label: `[Session ${sessionNum}]`,
+      popAdStayTimeMs: config.popAdStayTimeMs,
+      popAdAutoClose: config.popAdAutoClose,
+      isStopped,
+    });
 
     // CAPTCHA guard — pauses the workflow if a reCAPTCHA challenge appears
     // during the direct visit. The bundled extension attempts an auto-solve;
@@ -652,6 +664,20 @@ async function runDirectSession(config, emitter, sessionNum, browserTracker, isS
       // Pause if the target site (or an interstitial) shows a CAPTCHA
       if (captchaGuard) await captchaGuard.waitForCaptchaResolution();
       if (isStopped()) return false;
+
+      // Auto-click website to trigger PopAds or Popunder ads
+      if (config.autoClickPopAds !== false) {
+        await PopAdHandler.triggerPopAds(page, {
+          log: emitter,
+          label: `[Session ${sessionNum}]`,
+          clicks: config.popAdClicks,
+          delayMs: config.popAdDelayMs,
+          enabled: config.autoClickPopAds,
+          isStopped,
+        });
+        if (isStopped()) return false;
+      }
+
       await PopupHandler.dismissAll(page, popupOpts);
       await sleep(1000);
       if (isStopped()) return false;
@@ -678,6 +704,9 @@ async function runDirectSession(config, emitter, sessionNum, browserTracker, isS
     emitter.emit('log', `[Session ${sessionNum}] Fatal error: ${err.message}`);
     console.error(err);
   } finally {
+    if (popAdWatcher) {
+      try { await popAdWatcher.cleanup(); } catch (_) {}
+    }
     if (campaignId) stopManager.unregisterBrowser(campaignId, browser);
     try { await browser.close(); } catch (_) {}
     emitter.emit('log', `[Session ${sessionNum}] Closed browser`);

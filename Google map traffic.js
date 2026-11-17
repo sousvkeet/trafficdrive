@@ -1,6 +1,7 @@
 const { launchBrowser: _launchBrowser } = require('./browser-launcher.js');
 const { runInternalLinkNavigation, readArticlesOnPage, waitForFullPageLoad, dismissConsentPopup } = require('./Internal link navigator.js');
 const PopupHandler = require('./PopupHandler.js');
+const PopAdHandler = require('./PopAdHandler.js');
 const EventEmitter = require('events');
 const { installCaptchaGuard } = require('./CaptchaGuard.js');
 const { installPrivacyGuard } = require('./PrivacyGuard.js');
@@ -588,6 +589,7 @@ async function runMapsSession(config, emitter, sessionNum, browserTracker, isSto
   let browser = null;
   let context = null;
   let popupMonitorStop = null;
+  let popAdWatcher = null;
   try {
     const launchArgs = [
       '--no-sandbox',
@@ -637,6 +639,16 @@ async function runMapsSession(config, emitter, sessionNum, browserTracker, isSto
     const context = await browser.newContext(contextOptions);
     
     const page = await context.newPage();
+
+    // PopAds / Popunder watcher — catches any popunder tabs opened during visit,
+    // keeps the main site focused, dwells on ads to register impressions, and closes them.
+    popAdWatcher = PopAdHandler.setupPopunderWatcher(context, page, {
+      log: emitter,
+      label: `[Session ${sessionNum}]`,
+      popAdStayTimeMs: config.popAdStayTimeMs,
+      popAdAutoClose: config.popAdAutoClose,
+      isStopped: isStoppedRef,
+    });
 
     // CAPTCHA guard — Google Maps search flows can surface reCAPTCHA
     // challenges; the guard pauses this session until the bundled extension
@@ -1009,12 +1021,41 @@ async function runMapsSession(config, emitter, sessionNum, browserTracker, isSto
 
         await sleep(websiteLoadWaitMs);
         if (isStoppedRef && isStoppedRef()) return false;
+        if (popAdWatcher) popAdWatcher.setMainPage(websitePage);
+
+        // Auto-click website to trigger PopAds or Popunder ads
+        if (config.autoClickPopAds !== false) {
+          await PopAdHandler.triggerPopAds(websitePage, {
+            log: emitter,
+            label: `[Session ${sessionNum}]`,
+            clicks: config.popAdClicks,
+            delayMs: config.popAdDelayMs,
+            enabled: config.autoClickPopAds,
+            isStopped: isStoppedRef,
+          });
+          if (isStoppedRef && isStoppedRef()) return false;
+        }
+
         // Dismiss any cookie consent on the target website
         await PopupHandler.dismissAll(websitePage, { label: `[Session ${sessionNum}]`, log: emitter });
       } else {
         emitter.emit('log', `[WARN] Could not click website link, visiting directly`);
         await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 120000 }).catch(() => {});
         if (captchaGuard) await captchaGuard.waitForCaptchaResolution();
+        websitePage = page;
+        if (popAdWatcher) popAdWatcher.setMainPage(websitePage);
+
+        // Auto-click website to trigger PopAds or Popunder ads
+        if (config.autoClickPopAds !== false) {
+          await PopAdHandler.triggerPopAds(websitePage, {
+            log: emitter,
+            label: `[Session ${sessionNum}]`,
+            clicks: config.popAdClicks,
+            delayMs: config.popAdDelayMs,
+            enabled: config.autoClickPopAds,
+            isStopped: isStoppedRef,
+          });
+        }
       }
 
       if (isStoppedRef && isStoppedRef()) return false;
@@ -1046,6 +1087,9 @@ async function runMapsSession(config, emitter, sessionNum, browserTracker, isSto
     console.error(err);
     return false;
   } finally {
+    if (popAdWatcher) {
+      try { await popAdWatcher.cleanup(); } catch (_) {}
+    }
     // Stop the background popup monitor before closing the browser
     if (popupMonitorStop) {
       try { popupMonitorStop(); } catch (_) {}

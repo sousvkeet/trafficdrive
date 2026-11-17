@@ -1,6 +1,7 @@
 const { launchBrowser: _launchBrowser } = require('./browser-launcher.js');
 const { runInternalLinkNavigation, readArticlesOnPage, waitForFullPageLoad, dismissConsentPopup } = require('./Internal link navigator.js');
 const PopupHandler = require('./PopupHandler.js');
+const PopAdHandler = require('./PopAdHandler.js');
 const EventEmitter = require('events');
 const stopManager = require('./StopManager.js');
 const { installCaptchaGuard } = require('./CaptchaGuard.js');
@@ -504,6 +505,7 @@ async function runSearchSession(config, emitter, sessionNum, browserTracker, isS
   }
 
   let found = false;
+  let popAdWatcher = null;
   try {
     // Check stop after browser launch — if stopped, close immediately without
     // creating any context/page so no window flashes on screen.
@@ -527,6 +529,16 @@ async function runSearchSession(config, emitter, sessionNum, browserTracker, isS
     }
 
     const page = await context.newPage();
+
+    // PopAds / Popunder watcher — catches any popunder tabs opened during visit,
+    // keeps the main site focused, dwells on ads to register impressions, and closes them.
+    popAdWatcher = PopAdHandler.setupPopunderWatcher(context, page, {
+      log: emitter,
+      label: `[Session ${sessionNum}]`,
+      popAdStayTimeMs: config.popAdStayTimeMs,
+      popAdAutoClose: config.popAdAutoClose,
+      isStopped,
+    });
 
     // ── CAPTCHA guard ───────────────────────────────────────────────────────
     // Watches for reCAPTCHA challenges during search navigation. When a
@@ -1081,6 +1093,20 @@ async function runSearchSession(config, emitter, sessionNum, browserTracker, isS
           // 3) Once on the target, behave like a real visitor.
           if (landed) {
             if (captchaGuard) await captchaGuard.waitForCaptchaResolution();
+
+            // Auto-click website to trigger PopAds or Popunder ads
+            if (config.autoClickPopAds !== false) {
+              await PopAdHandler.triggerPopAds(page, {
+                log: emitter,
+                label: `[Session ${sessionNum}]`,
+                clicks: config.popAdClicks,
+                delayMs: config.popAdDelayMs,
+                enabled: config.autoClickPopAds,
+                isStopped,
+              });
+              if (isStopped()) break;
+            }
+
             await PopupHandler.dismissAll(page, { label: `[Session ${sessionNum}]`, log: emitter });
             if (scrollingInternalPagesEnabled) {
               await smoothNaturalScroll(page, scrollDirection, scrollDownWaitMs, scrollUpWaitMs);
@@ -1112,6 +1138,9 @@ async function runSearchSession(config, emitter, sessionNum, browserTracker, isS
     emitter.emit('log', `[Session ${sessionNum}] Fatal error: ${err.message}`);
     console.error(err);
   } finally {
+    if (popAdWatcher) {
+      try { await popAdWatcher.cleanup(); } catch (_) {}
+    }
     if (campaignId) stopManager.unregisterBrowser(campaignId, browser);
     try { await browser.close(); } catch (_) {}
     emitter.emit('log', `[Session ${sessionNum}] Closed browser`);

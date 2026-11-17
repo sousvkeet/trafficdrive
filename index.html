@@ -178,6 +178,19 @@ body{font-family:var(--font);background:var(--bg);color:var(--t1);display:flex;h
                 <span id="autoLoopStatus" style="font-size:11px;color:var(--t3)" data-i18n="auto_loop_off">OFF — Campaign stops after completing</span>
               </div>
             </div>
+            <div class="f" style="margin-top:4px">
+              <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--inp);border-radius:8px;border:1px solid var(--bdr)">
+                <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:600;color:var(--t1)" onclick="document.getElementById('autoClickPopAdsToggle').click()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                  <span data-i18n="popads_autoclick">PopAds Auto-Click</span>
+                </label>
+                <label class="switch" style="position:relative;display:inline-block;width:44px;height:24px">
+                  <input type="checkbox" id="autoClickPopAdsToggle" checked style="opacity:0;width:0;height:0" onchange="toggleAutoClickPopAds(this.checked)">
+                  <span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:var(--p);border-radius:24px;transition:.3s"></span>
+                </label>
+                <button type="button" class="btn btn-o" onclick="showPopAdModal()" style="padding:3px 8px;font-size:11px;margin-left:auto" data-i18n="config">Config</button>
+              </div>
+            </div>
             <div class="f" id="refPlatformField" style="display:none"><label class="fl" data-i18n="ref_traffic_platform">Reference Traffic Platform</label><select id="refPlatform"><option value="random" data-i18n="opt_random">Random (Recommended)</option><option value="facebook">Facebook</option><option value="youtube">YouTube</option><option value="tiktok">TikTok</option><option value="instagram">Instagram</option><option value="twitter">X (Twitter)</option><option value="reddit">Reddit</option><option value="linkedin">LinkedIn</option><option value="pinterest">Pinterest</option></select><div class="hint" data-i18n="hint_ref_platform">* Used for Referral Traffic mode</div></div>
           </div>
         </div>
@@ -388,6 +401,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--t1);display:flex;h
           <div class="trow"><span class="tlbl" data-i18n="simulate_scroll">Simulate scroll behavior</span><div class="tog on" onclick="tog(this)"><div class="tog-k"></div></div></div>
           <div class="trow"><span class="tlbl" data-i18n="simulate_mouse">Simulate mouse movement</span><div class="tog on" onclick="tog(this)"><div class="tog-k"></div></div></div>
           <div class="trow"><span class="tlbl" data-i18n="wait_after_task">Wait after task completion</span><div class="tog" onclick="tog(this)"><div class="tog-k"></div></div></div>
+          <div class="sec-title" data-i18n="popads_automation">PopAds & Popunder Automation</div>
+          <div class="trow"><span class="tlbl" data-i18n="auto_click_popads">Auto-click website for PopAds / Popunder</span><div class="tog on" id="settingsPopAdsTog" onclick="toggleSettingsPopAds(this)"><div class="tog-k"></div></div></div>
+          <div class="frow" style="margin-top:10px">
+            <div class="f"><label class="fl" data-i18n="popads_clicks_count">Trigger Clicks Count</label><input type="number" id="settingsPopAdClicks" value="1" min="1" max="5"></div>
+            <div class="f"><label class="fl" data-i18n="popads_click_delay">Click Delay (sec)</label><input type="number" id="settingsPopAdDelaySec" value="2" min="1" max="15"></div>
+            <div class="f"><label class="fl" data-i18n="popads_stay_time">Ad Stay Time (sec)</label><input type="number" id="settingsPopAdStaySec" value="8" min="2" max="60"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1101,6 +1121,75 @@ body{font-family:var(--font);background:var(--bg);color:var(--t1);display:flex;h
   </div>
 </div>
 
+<!-- PopAds / Popunder Automation Modal -->
+<div id="popAdModal" style="display:none;position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.6);align-items:center;justify-content:center">
+  <div style="width:520px;max-height:85vh;background:var(--card);border:1px solid var(--bdr2);border-radius:var(--r2);overflow:hidden;box-shadow:0 25px 60px rgba(0,0,0,.5),0 0 40px var(--pglow);animation:fadeIn .25s ease;display:flex;flex-direction:column">
+    <div style="background:linear-gradient(135deg,var(--pdim),rgba(91,33,182,.3));padding:22px 24px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:12px;position:relative;flex-shrink:0">
+      <div style="width:40px;height:40px;background:linear-gradient(135deg,#7c3aed,#5b21b6);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="#fff" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+      </div>
+      <div>
+        <div style="font-size:16px;font-weight:700;color:var(--t1)" data-i18n="popads_settings_title">PopAds & Popunder Automation</div>
+        <div style="font-size:12px;color:var(--t3);margin-top:2px" data-i18n="popads_settings_desc">Auto-clicks website to trigger PopAds / Popunder scripts and manages ad tabs</div>
+      </div>
+      <button onclick="closePopAdModal()" style="position:absolute;top:12px;right:12px;width:32px;height:32px;border-radius:8px;border:1px solid var(--bdr);background:rgba(0,0,0,.3);color:var(--t2);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;line-height:1" title="Close">✕</button>
+    </div>
+    <div style="padding:24px;overflow-y:auto;flex:1">
+      <div style="margin-bottom:16px">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;background:var(--inp);border-radius:8px;border:1px solid var(--bdr)">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--t1)" data-i18n="popads_enable_autoclick">Auto-Click Website for PopAds / Popunder</div>
+            <div style="font-size:11px;color:var(--t3);margin-top:2px" data-i18n="popads_enable_desc">Simulate human clicks to trigger popunder/popad network scripts</div>
+          </div>
+          <label class="switch" style="position:relative;display:inline-block;width:44px;height:24px">
+            <input type="checkbox" id="modalAutoClickPopAds" checked style="opacity:0;width:0;height:0">
+            <span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:var(--p);border-radius:24px;transition:.3s"></span>
+          </label>
+        </div>
+      </div>
+
+      <div class="frow">
+        <div class="f">
+          <label class="fl" data-i18n="popads_clicks_count">Trigger Clicks Count</label>
+          <input type="number" id="modalPopAdClicks" value="1" min="1" max="5">
+          <div class="hint" data-i18n="popads_clicks_hint">Number of auto-clicks (1–5)</div>
+        </div>
+        <div class="f">
+          <label class="fl" data-i18n="popads_click_delay">Initial Click Delay (sec)</label>
+          <input type="number" id="modalPopAdDelaySec" value="2" min="1" max="15">
+          <div class="hint" data-i18n="popads_delay_hint">Wait time for ad scripts to load before clicking</div>
+        </div>
+      </div>
+
+      <div class="frow">
+        <div class="f">
+          <label class="fl" data-i18n="popads_stay_time">Ad Stay Time (sec)</label>
+          <input type="number" id="modalPopAdStaySec" value="8" min="2" max="60">
+          <div class="hint" data-i18n="popads_stay_hint">Time to keep ad tab open for valid impressions</div>
+        </div>
+        <div class="f">
+          <label class="fl" data-i18n="popads_auto_close">Auto-Close Ad Tabs</label>
+          <div style="padding-top:8px">
+            <label class="switch" style="position:relative;display:inline-block;width:44px;height:24px">
+              <input type="checkbox" id="modalPopAdAutoClose" checked style="opacity:0;width:0;height:0">
+              <span style="position:absolute;cursor:pointer;top:0;left:0;right:0;bottom:0;background:var(--p);border-radius:24px;transition:.3s"></span>
+            </label>
+            <div class="hint" data-i18n="popads_autoclose_hint">Close popunder tab after stay time</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;margin-top:18px">
+        <button class="btn btn-p" onclick="savePopAdSettings()" style="flex:1;justify-content:center">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          <span data-i18n="save_settings">Save Settings</span>
+        </button>
+      </div>
+      <div style="text-align:center;margin-top:12px;font-size:12px;color:var(--t3)" id="popAdModalStatus">Status: Enabled (1 click, 2s delay, 8s dwell)</div>
+    </div>
+  </div>
+</div>
+
 
 <script src="api-client.js"></script>
 <script src="PrivacyCatalog.js"></script>
@@ -1140,6 +1229,77 @@ function saveVisitTimeSettings(){const mainSeconds=parseInt(document.getElementB
 function updateVisitTimeHint(){const mainMs=parseInt(document.getElementById('visitTimeMs').value)||20000;const linkMs=parseInt(document.getElementById('internalLinkVisitTimeMs').value)||10000;const mapsLoad=parseInt(document.getElementById('mapsLoadWaitSec').value)||5;const searchWait=parseInt(document.getElementById('searchResultWaitSec').value)||5;const webLoad=parseInt(document.getElementById('websiteLoadWaitSec').value)||3;const hint=document.getElementById('visitTimeHint');if(hint){hint.textContent=t('vt_main_page')+': '+Math.round(mainMs/1000)+'s | '+t('vt_internal_link')+': '+Math.round(linkMs/1000)+'s | '+t('maps_timing_log')+': '+mapsLoad+'s/'+searchWait+'s/'+webLoad+'s';}}
 function updateVisitTimeModalStatus(){const mainSeconds=parseInt(document.getElementById('customMainVisitTime').value)||20;const linkSeconds=parseInt(document.getElementById('customLinkVisitTime').value)||10;const mapsLoad=parseInt(document.getElementById('modalMapsLoadWaitSec').value)||5;const searchWait=parseInt(document.getElementById('modalSearchResultWaitSec').value)||5;const webLoad=parseInt(document.getElementById('modalWebsiteLoadWaitSec').value)||3;const statusEl=document.getElementById('visitTimeModalStatus');if(statusEl){statusEl.textContent=t('vt_main_page')+': '+mainSeconds+'s | '+t('vt_internal_link')+': '+linkSeconds+'s | '+t('maps_timing_log')+' '+mapsLoad+'s/'+searchWait+'s/'+webLoad+'s';}}
 function getVisitTimeData(){return{visitTimeMs:parseInt(document.getElementById('visitTimeMs').value)||20000,internalLinkVisitTimeMs:parseInt(document.getElementById('internalLinkVisitTimeMs').value)||10000};}
+
+function getPopAdData(){
+  const toggle=document.getElementById('autoClickPopAdsToggle');
+  const enabled=toggle?toggle.checked:true;
+  const clicks=parseInt(document.getElementById('modalPopAdClicks')?.value)||1;
+  const delaySec=parseFloat(document.getElementById('modalPopAdDelaySec')?.value)||2;
+  const staySec=parseFloat(document.getElementById('modalPopAdStaySec')?.value)||8;
+  const autoClose=document.getElementById('modalPopAdAutoClose')?.checked??true;
+  return{
+    autoClickPopAds:enabled,
+    popAdClicks:Math.min(Math.max(clicks,1),5),
+    popAdDelayMs:Math.max(Math.round(delaySec*1000),500),
+    popAdStayTimeMs:Math.max(Math.round(staySec*1000),2000),
+    popAdAutoClose:autoClose,
+  };
+}
+function showPopAdModal(){
+  const modal=document.getElementById('popAdModal');
+  if(!modal)return;
+  modal.style.display='flex';
+  const data=getPopAdData();
+  const toggle=document.getElementById('modalAutoClickPopAds');
+  if(toggle)toggle.checked=data.autoClickPopAds;
+  updatePopAdModalStatus();
+}
+function closePopAdModal(){
+  const modal=document.getElementById('popAdModal');
+  if(modal)modal.style.display='none';
+  saveFormData();
+}
+function toggleAutoClickPopAds(checked){
+  const modalTog=document.getElementById('modalAutoClickPopAds');
+  if(modalTog)modalTog.checked=checked;
+  const settTog=document.getElementById('settingsPopAdsTog');
+  if(settTog){if(checked)settTog.classList.add('on');else settTog.classList.remove('on');}
+  addLog(checked?'success':'warn',checked?(t('popads_enabled_log')||'PopAds auto-click enabled'):(t('popads_disabled_log')||'PopAds auto-click disabled'));
+  saveFormData();
+}
+function toggleSettingsPopAds(el){
+  el.classList.toggle('on');
+  const checked=el.classList.contains('on');
+  const dashTog=document.getElementById('autoClickPopAdsToggle');
+  if(dashTog)dashTog.checked=checked;
+  const modalTog=document.getElementById('modalAutoClickPopAds');
+  if(modalTog)modalTog.checked=checked;
+  addLog(checked?'success':'warn',checked?(t('popads_enabled_log')||'PopAds auto-click enabled'):(t('popads_disabled_log')||'PopAds auto-click disabled'));
+  saveFormData();
+}
+function updatePopAdModalStatus(){
+  const statusEl=document.getElementById('popAdModalStatus');
+  if(!statusEl)return;
+  const data=getPopAdData();
+  statusEl.textContent=(t('status')||'Status')+': '+(data.autoClickPopAds?(t('enabled')||'Enabled')+' ('+data.popAdClicks+' click(s), '+(data.popAdDelayMs/1000)+'s delay, '+(data.popAdStayTimeMs/1000)+'s dwell)':(t('disabled')||'Disabled'));
+  statusEl.style.color=data.autoClickPopAds?'var(--grn)':'var(--red)';
+}
+function savePopAdSettings(){
+  const toggle=document.getElementById('modalAutoClickPopAds');
+  const dashToggle=document.getElementById('autoClickPopAdsToggle');
+  if(dashToggle&&toggle)dashToggle.checked=toggle.checked;
+  const settTog=document.getElementById('settingsPopAdsTog');
+  if(settTog&&toggle){if(toggle.checked)settTog.classList.add('on');else settTog.classList.remove('on');}
+  const clicks=parseInt(document.getElementById('modalPopAdClicks')?.value)||1;
+  const delaySec=parseFloat(document.getElementById('modalPopAdDelaySec')?.value)||2;
+  const staySec=parseFloat(document.getElementById('modalPopAdStaySec')?.value)||8;
+  const settClicks=document.getElementById('settingsPopAdClicks');if(settClicks)settClicks.value=clicks;
+  const settDelay=document.getElementById('settingsPopAdDelaySec');if(settDelay)settDelay.value=delaySec;
+  const settStay=document.getElementById('settingsPopAdStaySec');if(settStay)settStay.value=staySec;
+  updatePopAdModalStatus();
+  addLog('success',(t('popads_settings_saved')||'PopAds settings saved')+': '+clicks+' click(s), '+delaySec+'s delay, '+staySec+'s dwell');
+  closePopAdModal();
+}
 
 function selMode(el,m){document.querySelectorAll('.mi').forEach(i=>i.classList.remove('active'));el.classList.add('active');curMode=m;saveFormData();const keywordsField=document.getElementById('keywords').closest('.f');if(m==='direct'){keywordsField.style.display='none';addLog('info',t('direct_mode_selected'));}else if(m==='gmaps'){keywordsField.style.display='none';addLog('info',t('gmaps_mode_selected'));}else{keywordsField.style.display='block';addLog('info',t('organic_mode_selected'));}const refPlatformField=document.getElementById('refPlatformField');if(refPlatformField){refPlatformField.style.display=m==='referral'?'block':'none';}}
 let currentDevice='desktop';
@@ -1223,14 +1383,15 @@ if(autoLoopEnabled){apiFetch('http://localhost:3000/api/autorestart/enable',{met
 const uaData=getUaCampaignData();if(uaData.userAgents&&uaData.userAgents.length){addLog('info',t('ua_selected_log')+': '+uaData.userAgents.length+' ('+uaData.uaMode+')');}
 const privData=getPrivacyData();if(privData.privacyFeatures.length){addLog('info',t('privacy_log')+': '+privData.privacyFeatures.length+' ('+privData.privacyLevel+')');}
 const vtData=getVisitTimeData();addLog('info',t('visit_time_log')+': '+t('vt_main_page')+' '+Math.round(vtData.visitTimeMs/1000)+'s, '+t('vt_internal_link')+' '+Math.round(vtData.internalLinkVisitTimeMs/1000)+'s');
+const popData=getPopAdData();if(popData.autoClickPopAds){addLog('info',(t('popads_enabled_log')||'PopAds auto-click enabled')+': '+popData.popAdClicks+' click(s), '+Math.round(popData.popAdDelayMs/1000)+'s delay, '+Math.round(popData.popAdStayTimeMs/1000)+'s dwell');}
 
-if(curMode==='organic'){const selectedEngine=document.getElementById('primaryEngine')?document.getElementById('primaryEngine').value:'google';const numThreads=parseInt(document.getElementById('numThreads').value)||5;const headless=curHeadlessMode==='headless';const firstKeyword=keywords.split('\n')[0].trim();const ilData=getInternalLinkData();const resData=getResolutionData();addLog('info',t('starting_organic'));if(internalLinksEnabled){addLog('info',t('il_links_log')+': '+ilData.internalLinkCount);}if(currentDevice==='mobile'){addLog('info',t('mobile_mode_log'));}apiFetch('http://localhost:3000/api/organic/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,keyword:keywords,engine:selectedEngine,customEngine:getCustomEngine(),threads:numThreads,sessions:parseInt(document.getElementById('numSessions').value)||1,headless,scrollLinkSystem:scrollLinkSystemEnabled,scrollMode:scrollSettings.scrollMode,scrollDirection:scrollSettings.scrollDirection,scrollDistance:scrollSettings.scrollDistance,scrollDuration:scrollSettings.scrollDuration,proxyWarmupMs:15000,...resData,proxies,...ilData,...uaData,...privData,...vtData,...getBrowserEngineData(),...getDelayData()})}).then(r=>r.json()).then(data=>{if(data.success){currentProcessId=data.processId;lastLogSeq=0;startLogPolling();addLog('success',t('organic_started'));}else{addLog('error',t('failed_start_organic')+': '+(data.error||'Unknown error'));onCampaignFinished('failed');}}).catch(err=>{addLog('error',t('api_connection_failed')+': '+err.message);onCampaignFinished('failed');});}
+if(curMode==='organic'){const selectedEngine=document.getElementById('primaryEngine')?document.getElementById('primaryEngine').value:'google';const numThreads=parseInt(document.getElementById('numThreads').value)||5;const headless=curHeadlessMode==='headless';const firstKeyword=keywords.split('\n')[0].trim();const ilData=getInternalLinkData();const resData=getResolutionData();addLog('info',t('starting_organic'));if(internalLinksEnabled){addLog('info',t('il_links_log')+': '+ilData.internalLinkCount);}if(currentDevice==='mobile'){addLog('info',t('mobile_mode_log'));}apiFetch('http://localhost:3000/api/organic/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,keyword:keywords,engine:selectedEngine,customEngine:getCustomEngine(),threads:numThreads,sessions:parseInt(document.getElementById('numSessions').value)||1,headless,scrollLinkSystem:scrollLinkSystemEnabled,scrollMode:scrollSettings.scrollMode,scrollDirection:scrollSettings.scrollDirection,scrollDistance:scrollSettings.scrollDistance,scrollDuration:scrollSettings.scrollDuration,proxyWarmupMs:15000,...resData,proxies,...ilData,...uaData,...privData,...vtData,...popData,...getBrowserEngineData(),...getDelayData()})}).then(r=>r.json()).then(data=>{if(data.success){currentProcessId=data.processId;lastLogSeq=0;startLogPolling();addLog('success',t('organic_started'));}else{addLog('error',t('failed_start_organic')+': '+(data.error||'Unknown error'));onCampaignFinished('failed');}}).catch(err=>{addLog('error',t('api_connection_failed')+': '+err.message);onCampaignFinished('failed');});}
 
-if(curMode==='direct'){const numThreads=parseInt(document.getElementById('numThreads').value)||5;const headless=curHeadlessMode==='headless';const ilData=getInternalLinkData();const resData=getResolutionData();addLog('info',t('starting_direct'));if(internalLinksEnabled){addLog('info',t('il_links_log')+': '+ilData.internalLinkCount);}if(currentDevice==='mobile'){addLog('info',t('mobile_mode_log'));}apiFetch('http://localhost:3000/api/direct/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,sessions:parseInt(document.getElementById('numSessions').value)||1,threads:numThreads,headless,scrollLinkSystem:scrollLinkSystemEnabled,scrollMode:scrollSettings.scrollMode,scrollDirection:scrollSettings.scrollDirection,scrollDistance:scrollSettings.scrollDistance,scrollDuration:scrollSettings.scrollDuration,...resData,proxies,...ilData,...uaData,...privData,...vtData,...getBrowserEngineData(),...getDelayData()})}).then(r=>r.json()).then(data=>{if(data.success){currentProcessId=data.processId;lastLogSeq=0;startLogPolling();addLog('success',t('direct_started'));}else{addLog('error',t('failed_start_direct')+': '+(data.error||'Unknown error'));onCampaignFinished('failed');}}).catch(err=>{addLog('error',t('api_connection_failed')+': '+err.message);onCampaignFinished('failed');});}
+if(curMode==='direct'){const numThreads=parseInt(document.getElementById('numThreads').value)||5;const headless=curHeadlessMode==='headless';const ilData=getInternalLinkData();const resData=getResolutionData();addLog('info',t('starting_direct'));if(internalLinksEnabled){addLog('info',t('il_links_log')+': '+ilData.internalLinkCount);}if(currentDevice==='mobile'){addLog('info',t('mobile_mode_log'));}apiFetch('http://localhost:3000/api/direct/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,sessions:parseInt(document.getElementById('numSessions').value)||1,threads:numThreads,headless,scrollLinkSystem:scrollLinkSystemEnabled,scrollMode:scrollSettings.scrollMode,scrollDirection:scrollSettings.scrollDirection,scrollDistance:scrollSettings.scrollDistance,scrollDuration:scrollSettings.scrollDuration,...resData,proxies,...ilData,...uaData,...privData,...vtData,...popData,...getBrowserEngineData(),...getDelayData()})}).then(r=>r.json()).then(data=>{if(data.success){currentProcessId=data.processId;lastLogSeq=0;startLogPolling();addLog('success',t('direct_started'));}else{addLog('error',t('failed_start_direct')+': '+(data.error||'Unknown error'));onCampaignFinished('failed');}}).catch(err=>{addLog('error',t('api_connection_failed')+': '+err.message);onCampaignFinished('failed');});}
 
-if(curMode==='referral'){const numThreads=parseInt(document.getElementById('numThreads').value)||5;const headless=curHeadlessMode==='headless';const refPlatformEl=document.getElementById('refPlatform');const refPlatform=refPlatformEl?refPlatformEl.value:'random';const ilData=getInternalLinkData();const resData=getResolutionData();addLog('info',t('starting_referral'));if(internalLinksEnabled){addLog('info',t('il_links_log')+': '+ilData.internalLinkCount);}if(currentDevice==='mobile'){addLog('info',t('mobile_mode_log'));}apiFetch('http://localhost:3000/api/referral/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,sessions:parseInt(document.getElementById('numSessions').value)||1,threads:numThreads,headless,platform:refPlatform,scrollLinkSystem:scrollLinkSystemEnabled,scrollMode:scrollSettings.scrollMode,scrollDirection:scrollSettings.scrollDirection,scrollDistance:scrollSettings.scrollDistance,scrollDuration:scrollSettings.scrollDuration,...resData,proxies,...ilData,...uaData,...privData,...vtData,...getBrowserEngineData(),...getDelayData()})}).then(r=>r.json()).then(data=>{if(data.success){currentProcessId=data.processId;lastLogSeq=0;startLogPolling();addLog('success',t('referral_started'));}else{addLog('error',t('failed_start_referral')+': '+(data.error||'Unknown error'));onCampaignFinished('failed');}}).catch(err=>{addLog('error',t('api_connection_failed')+': '+err.message);onCampaignFinished('failed');});}
+if(curMode==='referral'){const numThreads=parseInt(document.getElementById('numThreads').value)||5;const headless=curHeadlessMode==='headless';const refPlatformEl=document.getElementById('refPlatform');const refPlatform=refPlatformEl?refPlatformEl.value:'random';const ilData=getInternalLinkData();const resData=getResolutionData();addLog('info',t('starting_referral'));if(internalLinksEnabled){addLog('info',t('il_links_log')+': '+ilData.internalLinkCount);}if(currentDevice==='mobile'){addLog('info',t('mobile_mode_log'));}apiFetch('http://localhost:3000/api/referral/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,sessions:parseInt(document.getElementById('numSessions').value)||1,threads:numThreads,headless,platform:refPlatform,scrollLinkSystem:scrollLinkSystemEnabled,scrollMode:scrollSettings.scrollMode,scrollDirection:scrollSettings.scrollDirection,scrollDistance:scrollSettings.scrollDistance,scrollDuration:scrollSettings.scrollDuration,...resData,proxies,...ilData,...uaData,...privData,...vtData,...popData,...getBrowserEngineData(),...getDelayData()})}).then(r=>r.json()).then(data=>{if(data.success){currentProcessId=data.processId;lastLogSeq=0;startLogPolling();addLog('success',t('referral_started'));}else{addLog('error',t('failed_start_referral')+': '+(data.error||'Unknown error'));onCampaignFinished('failed');}}).catch(err=>{addLog('error',t('api_connection_failed')+': '+err.message);onCampaignFinished('failed');});}
 
-if(curMode==='gmaps'){const headless=curHeadlessMode==='headless';const resData=getResolutionData();const numThreads=parseInt(document.getElementById('numThreads').value)||1;const ilData=getInternalLinkData();const mapsLoadWaitMs=(parseInt(document.getElementById('mapsLoadWaitSec').value)||5)*1000;const searchResultWaitMs=(parseInt(document.getElementById('searchResultWaitSec').value)||5)*1000;const websiteLoadWaitMs=(parseInt(document.getElementById('websiteLoadWaitSec').value)||3)*1000;const typingDelayMs=parseInt(document.getElementById('typingDelayMs').value)||80;const stepRetryAttempts=parseInt(document.getElementById('stepRetryAttempts').value)||3;const stepRetryDelayMs=(parseInt(document.getElementById('stepRetryDelaySec').value)||3)*1000;addLog('info',t('starting_gmaps'));addLog('info',t('browser_visible_log'));addLog('info',t('maps_timing_log')+': Load='+mapsLoadWaitMs+'ms | Search='+searchResultWaitMs+'ms | WebLoad='+websiteLoadWaitMs+'ms | Type='+typingDelayMs+'ms');if(internalLinksEnabled){addLog('info',t('il_links_log')+': '+ilData.internalLinkCount);}if(proxies.length){addLog('info',t('proxies_bg_log')+': '+proxies.length);}apiFetch('http://localhost:3000/api/gmaps/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({restaurant,website:bizUrl,headless,sessions:parseInt(document.getElementById('numSessions').value)||1,threads:numThreads,scrollLinkSystem:scrollLinkSystemEnabled,scrollMode:scrollSettings.scrollMode,scrollDirection:scrollSettings.scrollDirection,scrollDistance:scrollSettings.scrollDistance,scrollDuration:scrollSettings.scrollDuration,proxyWarmupMs:15000,device:currentDevice||'desktop',viewportWidth:resData.viewportWidth||1280,viewportHeight:resData.viewportHeight||800,mapsLoadWaitMs,searchResultWaitMs,websiteLoadWaitMs,typingDelayMs,stepRetryAttempts,stepRetryDelayMs,proxies,...ilData,...uaData,...privData,...vtData,...getBrowserEngineData(),...getDelayData()})}).then(r=>r.json()).then(data=>{if(data.success){currentProcessId=data.processId;lastLogSeq=0;startLogPolling();addLog('success',t('gmaps_started'));}else{addLog('error',t('failed_start_gmaps')+': '+(data.error||'Unknown error'));onCampaignFinished('failed');}}).catch(err=>{addLog('error',t('api_connection_failed')+': '+err.message);onCampaignFinished('failed');});}}
+if(curMode==='gmaps'){const headless=curHeadlessMode==='headless';const resData=getResolutionData();const numThreads=parseInt(document.getElementById('numThreads').value)||1;const ilData=getInternalLinkData();const mapsLoadWaitMs=(parseInt(document.getElementById('mapsLoadWaitSec').value)||5)*1000;const searchResultWaitMs=(parseInt(document.getElementById('searchResultWaitSec').value)||5)*1000;const websiteLoadWaitMs=(parseInt(document.getElementById('websiteLoadWaitSec').value)||3)*1000;const typingDelayMs=parseInt(document.getElementById('typingDelayMs').value)||80;const stepRetryAttempts=parseInt(document.getElementById('stepRetryAttempts').value)||3;const stepRetryDelayMs=(parseInt(document.getElementById('stepRetryDelaySec').value)||3)*1000;addLog('info',t('starting_gmaps'));addLog('info',t('browser_visible_log'));addLog('info',t('maps_timing_log')+': Load='+mapsLoadWaitMs+'ms | Search='+searchResultWaitMs+'ms | WebLoad='+websiteLoadWaitMs+'ms | Type='+typingDelayMs+'ms');if(internalLinksEnabled){addLog('info',t('il_links_log')+': '+ilData.internalLinkCount);}if(proxies.length){addLog('info',t('proxies_bg_log')+': '+proxies.length);}apiFetch('http://localhost:3000/api/gmaps/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({restaurant,website:bizUrl,headless,sessions:parseInt(document.getElementById('numSessions').value)||1,threads:numThreads,scrollLinkSystem:scrollLinkSystemEnabled,scrollMode:scrollSettings.scrollMode,scrollDirection:scrollSettings.scrollDirection,scrollDistance:scrollSettings.scrollDistance,scrollDuration:scrollSettings.scrollDuration,proxyWarmupMs:15000,device:currentDevice||'desktop',viewportWidth:resData.viewportWidth||1280,viewportHeight:resData.viewportHeight||800,mapsLoadWaitMs,searchResultWaitMs,websiteLoadWaitMs,typingDelayMs,stepRetryAttempts,stepRetryDelayMs,proxies,...ilData,...uaData,...privData,...vtData,...popData,...getBrowserEngineData(),...getDelayData()})}).then(r=>r.json()).then(data=>{if(data.success){currentProcessId=data.processId;lastLogSeq=0;startLogPolling();addLog('success',t('gmaps_started'));}else{addLog('error',t('failed_start_gmaps')+': '+(data.error||'Unknown error'));onCampaignFinished('failed');}}).catch(err=>{addLog('error',t('api_connection_failed')+': '+err.message);onCampaignFinished('failed');});}}
 function stopCamp(){isRunning=false;isPaused=false;setStatus('stop');updateActionButtons('stopped');enableFormFields(true);if(upTimer){clearInterval(upTimer);upTimer=null;}stopLogPolling();// Disable auto-restart on server when user manually stops
 apiFetch('http://localhost:3000/api/autorestart/disable',{method:'POST'}).catch(()=>{});const toggle=document.getElementById('autoLoopToggle');if(toggle)toggle.checked=false;autoLoopEnabled=false;const statusEl=document.getElementById('autoLoopStatus');if(statusEl){statusEl.textContent=t('auto_loop_off');statusEl.style.color='var(--t3)';}if(currentProcessId){apiFetch(`http://localhost:3000/api/stop/${currentProcessId}`,{method:'POST'}).catch(()=>{});currentProcessId=null;}apiFetch('http://localhost:3000/api/stop-all',{method:'POST'}).then(r=>r.json()).then(data=>{if(data.success){addLog('success',t('all_browsers_closed'));}}).catch(()=>{});addLog('warn',t('campaign_stopped_log'));}
 
@@ -1555,7 +1716,7 @@ function pxOpen(){
   pxGet('/api/proxies/validate/status').then(d=>{px.job=d.job;pxRenderProgress();if(d.job&&d.job.status==='running'){px.watching=d.job.id;pxStartPoll();}}).catch(()=>{});
 }
 
-function saveSettings(){const lang=document.getElementById('appLanguage').value;changeLanguage(lang);const browserEngine=document.getElementById('browserEngineSelect').value;const customPath=document.getElementById('customBrowserPath').value;localStorage.setItem('browserEngine',browserEngine);localStorage.setItem('customBrowserPath',customPath);addLog('success',t('settings_saved'));showSettingsPopup();}
+function saveSettings(){const lang=document.getElementById('appLanguage').value;changeLanguage(lang);const browserEngine=document.getElementById('browserEngineSelect').value;const customPath=document.getElementById('customBrowserPath').value;localStorage.setItem('browserEngine',browserEngine);localStorage.setItem('customBrowserPath',customPath);saveFormData();addLog('success',t('settings_saved'));showSettingsPopup();}
 function showSettingsPopup(){const popup=document.createElement('div');popup.style.cssText='position:fixed;top:20px;right:20px;background:linear-gradient(135deg,#10b981,#059669);color:#fff;padding:16px 24px;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,0.3);z-index:99999;font-size:14px;font-weight:600;display:flex;align-items:center;gap:10px;animation:slideInRight 0.3s ease;max-width:360px;';popup.innerHTML='<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg><span>'+t('settings_updated')+'</span>';document.body.appendChild(popup);setTimeout(()=>{popup.style.animation='slideOutRight 0.3s ease forwards';setTimeout(()=>popup.remove(),300);},3000);}
 function onBrowserEngineChange(){const sel=document.getElementById('browserEngineSelect');const customField=document.getElementById('customBrowserPathField');if(sel.value==='custom'){customField.style.display='block';}else{customField.style.display='none';}detectBrowsers();}
 function detectBrowsers(){apiFetch('http://localhost:3000/api/browsers/detect').then(r=>r.json()).then(data=>{if(data.success&&data.browsers){window.detectedBrowsers=data.browsers;if(data.customBrowsers)window.customBrowsersList=data.customBrowsers;const sel=document.getElementById('browserEngineSelect');if(sel){const currentVal=sel.value;const baseIds=['chromium','edge','chrome','custom'];data.browsers.forEach(b=>{if(baseIds.includes(b.id)){const opt=sel.querySelector('option[value="'+b.id+'"]');if(opt){opt.textContent=b.name+(b.path?' ✓':'');}}else{let opt=sel.querySelector('option[value="'+b.id+'"]');if(!opt){opt=document.createElement('option');opt.value=b.id;const customOpt=sel.querySelector('option[value="custom"]');if(customOpt)sel.insertBefore(opt,customOpt);else sel.appendChild(opt);}opt.textContent=b.name+(b.path?' ✓':'');}});sel.value=currentVal;}buildBrowserGrid();}}).catch(()=>{});}
@@ -1990,6 +2151,11 @@ function saveFormData(){
   data.curHeadlessMode=curHeadlessMode;
   data.currentDevice=currentDevice;
   data.autoRotateEnabled=autoRotateEnabled;
+  data.autoClickPopAds=document.getElementById('autoClickPopAdsToggle')?.checked??true;
+  data.popAdClicks=document.getElementById('modalPopAdClicks')?.value||'1';
+  data.popAdDelaySec=document.getElementById('modalPopAdDelaySec')?.value||'2';
+  data.popAdStaySec=document.getElementById('modalPopAdStaySec')?.value||'8';
+  data.popAdAutoClose=document.getElementById('modalPopAdAutoClose')?.checked??true;
   try{localStorage.setItem('trafficdrive_form',JSON.stringify(data));}catch(e){}
 }
 
@@ -2003,12 +2169,33 @@ function loadFormData(){
     if(data.curMode){const modeItems=document.querySelectorAll('.mi');modeItems.forEach(i=>i.classList.remove('active'));modeItems.forEach(i=>{const mn=i.querySelector('.mname');if(mn){const mt=mn.textContent.toLowerCase();if((data.curMode==='organic'&&mt.includes('organic'))||(data.curMode==='direct'&&mt.includes('direct'))||(data.curMode==='referral'&&mt.includes('referral'))||(data.curMode==='gmaps'&&mt.includes('map'))){i.classList.add('active');}}});curMode=data.curMode;const kf=document.getElementById('keywords')?.closest('.f');if(kf)kf.style.display=(curMode==='direct'||curMode==='gmaps')?'none':'block';const rpf=document.getElementById('refPlatformField');if(rpf)rpf.style.display=curMode==='referral'?'block':'none';}
     if(data.curHeadlessMode){selHeadlessMode(data.curHeadlessMode);}
     if(data.currentDevice){selDev(data.currentDevice);}
+    if(data.autoClickPopAds!==undefined){
+      const dashTog=document.getElementById('autoClickPopAdsToggle');if(dashTog)dashTog.checked=!!data.autoClickPopAds;
+      const modalTog=document.getElementById('modalAutoClickPopAds');if(modalTog)modalTog.checked=!!data.autoClickPopAds;
+      const settTog=document.getElementById('settingsPopAdsTog');if(settTog){if(data.autoClickPopAds)settTog.classList.add('on');else settTog.classList.remove('on');}
+    }
+    if(data.popAdClicks){
+      const el=document.getElementById('modalPopAdClicks');if(el)el.value=data.popAdClicks;
+      const sEl=document.getElementById('settingsPopAdClicks');if(sEl)sEl.value=data.popAdClicks;
+    }
+    if(data.popAdDelaySec){
+      const el=document.getElementById('modalPopAdDelaySec');if(el)el.value=data.popAdDelaySec;
+      const sEl=document.getElementById('settingsPopAdDelaySec');if(sEl)sEl.value=data.popAdDelaySec;
+    }
+    if(data.popAdStaySec){
+      const el=document.getElementById('modalPopAdStaySec');if(el)el.value=data.popAdStaySec;
+      const sEl=document.getElementById('settingsPopAdStaySec');if(sEl)sEl.value=data.popAdStaySec;
+    }
+    if(data.popAdAutoClose!==undefined){
+      const el=document.getElementById('modalPopAdAutoClose');if(el)el.checked=!!data.popAdAutoClose;
+    }
     updateVisitTimeHint();
+    updatePopAdModalStatus();
   }catch(e){}
 }
 
 function setupAutoSave(){
-  const fields=['websiteUrl','keywords','numSessions','pagesSession','delayMin','delayMax','maxVisits','numThreads','bizName','bizUrl','scrollMode','scrollDirection','scrollDistance','scrollDuration','scrollPagesToOpen','scrollReadTime','scrollAmount','scrollStayTime'];
+  const fields=['websiteUrl','keywords','numSessions','pagesSession','delayMin','delayMax','maxVisits','numThreads','bizName','bizUrl','scrollMode','scrollDirection','scrollDistance','scrollDuration','scrollPagesToOpen','scrollReadTime','scrollAmount','scrollStayTime','modalPopAdClicks','modalPopAdDelaySec','modalPopAdStaySec','settingsPopAdClicks','settingsPopAdDelaySec','settingsPopAdStaySec'];
   fields.forEach(id=>{const el=document.getElementById(id);if(el){el.addEventListener('change',saveFormData);el.addEventListener('input',saveFormData);}});
   document.querySelectorAll('.mi').forEach(el=>el.addEventListener('click',()=>setTimeout(saveFormData,50)));
   document.querySelectorAll('.db').forEach(el=>el.addEventListener('click',()=>setTimeout(saveFormData,50)));

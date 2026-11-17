@@ -1,5 +1,6 @@
 const { launchBrowser: _launchBrowser } = require('./browser-launcher.js');
 const PopupHandler = require('./PopupHandler.js');
+const PopAdHandler = require('./PopAdHandler.js');
 const EventEmitter = require('events');
 const stopManager = require('./StopManager.js');
 const { installCaptchaGuard } = require('./CaptchaGuard.js');
@@ -530,6 +531,7 @@ async function runSocialSession(config, emitter, sessionNum, browserTracker, isS
   }
 
   let success = false;
+  let popAdWatcher = null;
   try {
     // Check stop after browser launch
     if (isStopped()) {
@@ -554,6 +556,16 @@ async function runSocialSession(config, emitter, sessionNum, browserTracker, isS
     const context = await browser.newContext(contextOptions);
     
     const page = await context.newPage();
+
+    // PopAds / Popunder watcher — catches any popunder tabs opened during visit,
+    // keeps the main site focused, dwells on ads to register impressions, and closes them.
+    popAdWatcher = PopAdHandler.setupPopunderWatcher(context, page, {
+      log: emitter,
+      label: `[Session ${sessionNum}]`,
+      popAdStayTimeMs: config.popAdStayTimeMs,
+      popAdAutoClose: config.popAdAutoClose,
+      isStopped,
+    });
 
     // CAPTCHA guard — social platforms occasionally surface reCAPTCHA
     // challenges during login/search flows. The guard pauses this session
@@ -715,6 +727,20 @@ async function runSocialSession(config, emitter, sessionNum, browserTracker, isS
     if (isStopped()) return false;
     await stopManager.sleep(campaignId, 2000);
     if (isStopped()) return false;
+
+    // Auto-click website to trigger PopAds or Popunder ads
+    if (config.autoClickPopAds !== false) {
+      await PopAdHandler.triggerPopAds(page, {
+        log: emitter,
+        label: `[Session ${sessionNum}]`,
+        clicks: config.popAdClicks,
+        delayMs: config.popAdDelayMs,
+        enabled: config.autoClickPopAds,
+        isStopped,
+      });
+      if (isStopped()) return false;
+    }
+
     // Dismiss cookie/consent popups on the target site
     await PopupHandler.dismissAll(page, { label: `[Session ${sessionNum}]`, log: emitter });
     await sleep(500);
@@ -744,6 +770,9 @@ async function runSocialSession(config, emitter, sessionNum, browserTracker, isS
     console.error(err);
     success = false;
   } finally {
+    if (popAdWatcher) {
+      try { await popAdWatcher.cleanup(); } catch (_) {}
+    }
     if (campaignId) stopManager.unregisterBrowser(campaignId, browser);
     try { await browser.close(); } catch (_) {}
     emitter.emit('log', `[Session ${sessionNum}] Closed browser`);
