@@ -1306,11 +1306,6 @@ function commonConfig(body) {
     proxies: resolveProxies(body),
     privacyFeatures: privacy.features,
     privacyLevel: privacy.level,
-    autoClickPopAds: body.autoClickPopAds !== undefined ? !!body.autoClickPopAds : true,
-    popAdClicks: Math.min(Math.max(parseInt(body.popAdClicks, 10) || 1, 1), 5),
-    popAdDelayMs: Math.max(parseInt(body.popAdDelayMs, 10) || 2000, 500),
-    popAdStayTimeMs: Math.max(parseInt(body.popAdStayTimeMs, 10) || 8000, 2000),
-    popAdAutoClose: body.popAdAutoClose !== undefined ? !!body.popAdAutoClose : true,
     ...sessionDelayConfig(body),
   };
 }
@@ -2302,7 +2297,12 @@ async function handleRequest(req, res) {
       if (!(t >= 1 && t <= 1000)) { sendJSON(res, 400, { success: false, error: 'target must be between 1 and 1000' }); return; }
       patch.target = t;
     }
+    if (body.fetchEveryMinutes !== undefined) {
+      if (!validFetchEvery(body.fetchEveryMinutes)) { sendJSON(res, 400, { success: false, error: 'fetchEveryMinutes must be 0 (only when the list runs low) or between 5 and 1440' }); return; }
+      patch.fetchEveryMin = Number(body.fetchEveryMinutes);
+    }
     if (Object.keys(patch).length) saveSettings({ proxyAuto: { ...getSettings().proxyAuto, ...patch } });
+    if (patch.fetchEveryMin !== undefined) proxyAutomation.reschedule();
     if (body.runNow || patch.enabled === true || patch.target !== undefined) proxyAutomation.kick();
     sendJSON(res, 200, { success: true, ...proxyAutomation.status() });
     return;
@@ -2950,13 +2950,19 @@ function createServer() {
 // allowMcpConnections: may AI assistants attach to this running app (publishes
 // the connection file)? Default on; the dashboard's "AI Assistant" page toggles it.
 let appSettings = null;
+// how often new proxies are fetched in the background: every N minutes (5 – 1440), or 0 = only when the list runs low
+function validFetchEvery(v) {
+  // a real number, or digits in a string — not null, '', true, [] (which JavaScript would quietly read as 0 or 1)
+  const n = typeof v === 'number' ? v : (typeof v === 'string' && /^\d+$/.test(v.trim()) ? Number(v) : NaN);
+  return Number.isInteger(n) && (n === 0 || (n >= 5 && n <= 1440));
+}
 function getSettings() {
   if (!appSettings) {
     const saved = readJsonFile(SETTINGS_FILE, {});
     const pa = saved.proxyAuto || {};
     appSettings = {
       allowMcpConnections: saved.allowMcpConnections !== false,
-      proxyAuto: { enabled: pa.enabled !== false, target: Math.min(1000, Math.max(1, parseInt(pa.target, 10) || 50)) },
+      proxyAuto: { enabled: pa.enabled !== false, target: Math.min(1000, Math.max(1, parseInt(pa.target, 10) || 50)), fetchEveryMin: validFetchEvery(pa.fetchEveryMin) ? parseInt(pa.fetchEveryMin, 10) : 60 },
     };
   }
   return appSettings;

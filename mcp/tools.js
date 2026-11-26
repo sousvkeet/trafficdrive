@@ -267,18 +267,19 @@ function registerTools(server, ctx) {
 
   tool('proxy_automation', {
     title: 'Automatic proxies',
-    description: 'Show or change "Automatic proxies" (on by default in the desktop app): working proxies are saved and loaded again at every start, re-checked in the background so dead ones drop out, and topped up from the enabled sources — checked against the last campaign\'s address — whenever fewer than `target` are ready. With no arguments it only reports the status. Note: while proxies are loaded, campaigns use them unless useLoadedProxies is false.',
+    description: 'Show or change "Automatic proxies" (on by default in the desktop app): working proxies are saved and loaded again at every start, re-checked in the background so dead ones drop out, and new ones are fetched from the enabled sources every hour (`fetchEveryMinutes`) and whenever fewer than `target` are ready — each time checked against the last campaign\'s address, keeping only the working ones. With no arguments it only reports the status. Note: while proxies are loaded, campaigns use them unless useLoadedProxies is false.',
     inputSchema: {
       enabled: z.boolean().optional().describe('Switch automatic proxies on or off.'),
       target: z.number().int().min(1).max(1000).optional().describe('Keep at least this many working proxies ready.'),
+      fetchEveryMinutes: z.number().int().min(0).max(1440).optional().describe('How often new proxies are fetched in the background: every N minutes (5–1440; default 60 = hourly), or 0 = only when fewer than `target` are ready.'),
       runNow: z.boolean().optional().describe('Look for working proxies now instead of waiting for the next round.'),
     },
     annotations: { ...WRITE_IDEMPOTENT, openWorldHint: true },
-  }, async ({ enabled, target, runNow }) => {
-    const changes = { ...(enabled !== undefined ? { enabled } : {}), ...(target !== undefined ? { target } : {}), ...(runNow ? { runNow: true } : {}) };
+  }, async ({ enabled, target, fetchEveryMinutes, runNow }) => {
+    const changes = { ...(enabled !== undefined ? { enabled } : {}), ...(target !== undefined ? { target } : {}), ...(fetchEveryMinutes !== undefined ? { fetchEveryMinutes } : {}), ...(runNow ? { runNow: true } : {}) };
     const r = Object.keys(changes).length ? await api.post('/api/proxies/auto', changes) : await api.get('/api/proxies/auto');
     const { success, ...st } = r;
-    return ok(st, `Automatic proxies are ${st.enabled ? 'on' : 'off'}: ${st.ready}/${st.target} working proxies ready${st.state === 'inactive' ? ' (it runs while the desktop app is open)' : st.message ? '. ' + st.message : '.'}`);
+    return ok(st, `Automatic proxies are ${st.enabled ? 'on' : 'off'}: ${st.ready}/${st.target} working proxies ready; new ones are fetched ${st.fetchEveryMin ? `every ${st.fetchEveryMin >= 60 && st.fetchEveryMin % 60 === 0 ? st.fetchEveryMin / 60 + ' hour(s)' : st.fetchEveryMin + ' minutes'}` : 'only when the list runs low'}${st.state === 'inactive' ? ' (it runs while the desktop app is open)' : st.message ? '. ' + st.message : '.'}`);
   });
 
   tool('scrape_free_proxies', {

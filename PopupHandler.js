@@ -112,16 +112,12 @@ function startMonitor(page, opts = {}) {
   return () => clearInterval(timer);
 }
 
-const PopAdHandler = require('./PopAdHandler.js');
-
 class PopupHandler {
   static dismissAll = dismissAll;
   static dismissGoogle = dismissAll;
   static dismissContinueBrowsing = dismissAll;
   static tryFrameworkSelectors = tryFrameworkSelectors;
   static startMonitor = startMonitor;
-  static triggerPopAds = PopAdHandler.triggerPopAds;
-  static setupPopunderWatcher = PopAdHandler.setupPopunderWatcher;
 }
 
 PopupHandler.dismissAll = dismissAll;
@@ -129,9 +125,6 @@ PopupHandler.dismissGoogle = dismissAll;
 PopupHandler.dismissContinueBrowsing = dismissAll;
 PopupHandler.tryFrameworkSelectors = tryFrameworkSelectors;
 PopupHandler.startMonitor = startMonitor;
-PopupHandler.triggerPopAds = PopAdHandler.triggerPopAds;
-PopupHandler.setupPopunderWatcher = PopAdHandler.setupPopunderWatcher;
-PopupHandler.PopAdHandler = PopAdHandler;
 
 module.exports = PopupHandler;
 module.exports.dismissAll = dismissAll;
@@ -139,6 +132,3 @@ module.exports.dismissGoogle = dismissAll;
 module.exports.dismissContinueBrowsing = dismissAll;
 module.exports.tryFrameworkSelectors = tryFrameworkSelectors;
 module.exports.startMonitor = startMonitor;
-module.exports.triggerPopAds = PopAdHandler.triggerPopAds;
-module.exports.setupPopunderWatcher = PopAdHandler.setupPopunderWatcher;
-module.exports.PopAdHandler = PopAdHandler;
